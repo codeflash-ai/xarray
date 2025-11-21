@@ -2970,10 +2970,14 @@ def calculate_dimensions(variables: Mapping[Any, Variable]) -> dict[Hashable, in
     """
     dims: dict[Hashable, int] = {}
     last_used = {}
-    scalar_vars = {k for k, v in variables.items() if not v.dims}
     for k, var in variables.items():
+        # Skip scalar variables (no dims) early; they cannot contribute dims
+        if not var.dims:
+            continue
         for dim, size in zip(var.dims, var.shape):
-            if dim in scalar_vars:
+            # A dimension name cannot collide with a scalar variable name in Xarray, but we still have to check
+            # Could only happen if a previous scalar var exists with the same name as a dimension
+            if dim in variables and not variables[dim].dims:
                 raise ValueError(
                     f"dimension {dim!r} already exists as a scalar variable"
                 )
@@ -2983,6 +2987,6 @@ def calculate_dimensions(variables: Mapping[Any, Variable]) -> dict[Hashable, in
             elif dims[dim] != size:
                 raise ValueError(
                     f"conflicting sizes for dimension {dim!r}: "
-                    f"length {size} on {k!r} and length {dims[dim]} on {last_used!r}"
+                    f"length {size} on {k!r} and length {dims[dim]} on {last_used[dim]!r}"
                 )
     return dims
