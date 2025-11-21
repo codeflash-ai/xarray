@@ -1096,6 +1096,26 @@ class Dataset(
         dataset. It is up to the caller to ensure that they have the right type
         and are not used elsewhere.
         """
+        # Fast-path: all defaults and not inplace -- return self directly
+        if (
+            not inplace
+            and variables is None
+            and coord_names is None
+            and dims is None
+            and attrs is _default
+            and indexes is None
+            and encoding is _default
+        ):
+            return self
+
+        # Pre-localize instance variables to reduce attribute lookups
+        _variables = self._variables
+        _coord_names = self._coord_names
+        _dims = self._dims
+        _attrs = self._attrs
+        _indexes = self._indexes
+        _encoding = self._encoding
+
         if inplace:
             if variables is not None:
                 self._variables = variables
@@ -1111,20 +1131,31 @@ class Dataset(
                 self._encoding = encoding
             obj = self
         else:
-            if variables is None:
-                variables = self._variables.copy()
-            if coord_names is None:
-                coord_names = self._coord_names.copy()
-            if dims is None:
-                dims = self._dims.copy()
+            new_variables = variables if variables is not None else _variables.copy()
+            new_coord_names = coord_names if coord_names is not None else _coord_names.copy()
+            new_dims = dims if dims is not None else _dims.copy()
+            # Only copy attrs/encoding if present (not None), otherwise leave as None
             if attrs is _default:
-                attrs = copy.copy(self._attrs)
-            if indexes is None:
-                indexes = self._indexes.copy()
+                if _attrs is not None:
+                    new_attrs = copy.copy(_attrs)
+                else:
+                    new_attrs = None
+            else:
+                new_attrs = attrs
+            if indexes is not None:
+                new_indexes = indexes
+            else:
+                new_indexes = _indexes.copy()
             if encoding is _default:
-                encoding = copy.copy(self._encoding)
+                if _encoding is not None:
+                    new_encoding = copy.copy(_encoding)
+                else:
+                    new_encoding = None
+            else:
+                new_encoding = encoding
+
             obj = self._construct_direct(
-                variables, coord_names, dims, attrs, indexes, encoding
+                new_variables, new_coord_names, new_dims, new_attrs, new_indexes, new_encoding
             )
         return obj
 
