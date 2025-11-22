@@ -101,9 +101,17 @@ def _ensure_bool_is_ndarray(result, *args):
     # This function ensures that the result is the appropriate shape in these
     # cases
     if isinstance(result, bool):
-        shape = np.broadcast(*args).shape
-        constructor = np.ones if result else np.zeros
-        result = constructor(shape, dtype=bool)
+        # Avoid unnecessary call to np.broadcast(...) when args is empty
+        if args:
+            shape = np.broadcast(*args).shape
+        else:
+            shape = ()
+        if result:
+            # For a 'True' scalar, use np.full instead of np.ones for efficiency and clarity
+            result = np.full(shape, True, dtype=bool)
+        else:
+            # For a 'False' scalar, use np.zeros as before (fast for all-false)
+            result = np.zeros(shape, dtype=bool)
     return result
 
 
