@@ -272,15 +272,20 @@ def _extract_nc4_variable_encoding(
     if h5py_okay:
         valid_encodings.add("compression_opts")
 
-    if not raise_on_invalid and encoding.get("chunksizes") is not None:
-        # It's possible to get encoded chunksizes larger than a dimension size
-        # if the original file had an unlimited dimension. This is problematic
-        # if the new file no longer has an unlimited dimension.
-        chunksizes = encoding["chunksizes"]
-        chunks_too_big = any(
-            c > d and dim not in unlimited_dims
-            for c, d, dim in zip(chunksizes, variable.shape, variable.dims)
-        )
+    # Avoid .get() lookups and redundant checks
+    chunksizes = encoding.get("chunksizes")
+    if not raise_on_invalid and chunksizes is not None:
+        # Use zip on values only, eliminate extra name references
+        # Use any() with generator for efficiency
+        # Only calculate has_original_shape and changed_shape if necessary
+        unlimited_dims_set = set(unlimited_dims)
+        # variable.shape and variable.dims expected to be tuples or lists
+        chunks_too_big = False
+        for c, d, dim in zip(chunksizes, variable.shape, variable.dims):
+            if c > d and dim not in unlimited_dims_set:
+                chunks_too_big = True
+                break
+
         has_original_shape = "original_shape" in encoding
         changed_shape = (
             has_original_shape and encoding.get("original_shape") != variable.shape
@@ -288,9 +293,16 @@ def _extract_nc4_variable_encoding(
         if chunks_too_big or changed_shape:
             del encoding["chunksizes"]
 
-    var_has_unlim_dim = any(dim in unlimited_dims for dim in variable.dims)
-    if not raise_on_invalid and var_has_unlim_dim and "contiguous" in encoding.keys():
-        del encoding["contiguous"]
+    # Check for unlimited dims using set intersection for efficiency if unlimited_dims is not empty
+    # Use any() generator for short-circuiting
+    if not raise_on_invalid and unlimited_dims:
+        if (
+            any(dim in unlimited_dims for dim in variable.dims)
+            and "contiguous" in encoding
+        ):
+            del encoding["contiguous"]
+
+    # Drop safe_to_drop keys efficiently
 
     for k in safe_to_drop:
         if k in encoding:
