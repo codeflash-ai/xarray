@@ -114,9 +114,14 @@ def array_eq(self, other):
 
 
 def array_ne(self, other):
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", r"elementwise comparison failed")
-        return _ensure_bool_is_ndarray(self != other, self, other)
+    # PERF: avoids filterwarnings setup on every call unless a comparison failure occurs
+    try:
+        result = self != other
+    except Exception:
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", r"elementwise comparison failed")
+            result = self != other
+    return _ensure_bool_is_ndarray(result, self, other)
 
 
 def _is_contiguous(positions):
