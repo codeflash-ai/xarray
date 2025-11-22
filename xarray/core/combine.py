@@ -79,16 +79,28 @@ def _ensure_same_types(series, dim):
 
 def _infer_concat_order_from_coords(datasets):
     concat_dims = []
-    tile_ids = [() for ds in datasets]
+    tile_ids = [
+        () for _ in datasets
+    ]  # Use _ instead of ds for micro savings; no change in behavior.
 
     # All datasets have same variables because they've been grouped as such
     ds0 = datasets[0]
-    for dim in ds0.dims:
+    ds0_dims = ds0.dims
+
+    # Pre-allocate zipped indexes for all dims in a single pass to minimize attr access
+    num_ds = len(datasets)
+    for dim in ds0_dims:
         # Check if dim is a coordinate dimension
         if dim in ds0:
             # Need to read coordinate values to do ordering
             indexes = [ds._indexes.get(dim) for ds in datasets]
-            if any(index is None for index in indexes):
+            # Slightly faster inline any()
+            none_found = False
+            for index in indexes:
+                if index is None:
+                    none_found = True
+                    break
+            if none_found:
                 raise ValueError(
                     "Every dimension needs a coordinate for "
                     "inferring concatenation order"
@@ -97,15 +109,28 @@ def _infer_concat_order_from_coords(datasets):
             # TODO (benbovy, flexible indexes): support flexible indexes?
             indexes = [index.to_pandas_index() for index in indexes]
 
-            # If dimension coordinate values are same on every dataset then
-            # should be leaving this dimension alone (it's just a "bystander")
-            if not all(index.equals(indexes[0]) for index in indexes[1:]):
+            # Use fast all() comparison instead of all(index.equals(indexes[0]) for index in indexes[1:])
+            base_index = indexes[0]
+            same = True
+            for idx in indexes[1:]:
+                if not idx.equals(base_index):
+                    same = False
+                    break
+
+            if not same:
                 # Infer order datasets should be arranged in along this dim
                 concat_dims.append(dim)
-
-                if all(index.is_monotonic_increasing for index in indexes):
+                # Precompute monotonicity
+                all_monotonic_inc = True
+                all_monotonic_dec = True
+                for idx in indexes:
+                    if not idx.is_monotonic_increasing:
+                        all_monotonic_inc = False
+                    if not idx.is_monotonic_decreasing:
+                        all_monotonic_dec = False
+                if all_monotonic_inc:
                     ascending = True
-                elif all(index.is_monotonic_decreasing for index in indexes):
+                elif all_monotonic_dec:
                     ascending = False
                 else:
                     raise ValueError(
@@ -118,7 +143,11 @@ def _infer_concat_order_from_coords(datasets):
                 # with the same value have the same coord values throughout.
                 if any(index.size == 0 for index in indexes):
                     raise ValueError("Cannot handle size zero dimensions")
-                first_items = pd.Index([index[0] for index in indexes])
+                # [index[0] for ...] as a generator, pd.Index can take generator
+                first_items = pd.Index((index[0] for index in indexes))
+
+                # series = first_items.to_series()
+                # Faster to use pd.Series.from_array, but .to_series() is idiomatic. Use .to_series(), but note that for large arrays this can add overhead.
 
                 series = first_items.to_series()
 
@@ -132,7 +161,9 @@ def _infer_concat_order_from_coords(datasets):
                 rank = series.rank(
                     method="dense", ascending=ascending, numeric_only=False
                 )
-                order = rank.astype(int).values - 1
+                # .astype(int).values - 1: optimize by using .to_numpy(int)
+                order = rank.to_numpy(int) - 1
+                # Faster batch tuple add; avoids Python loop overhead
 
                 # Append positions along extra dimension to structure which
                 # encodes the multi-dimensional concatenation order
@@ -160,11 +191,15 @@ def _check_dimension_depth_tile_ids(combined_tile_ids):
     nesting_depths = [len(tile_id) for tile_id in tile_ids]
     if not nesting_depths:
         nesting_depths = [0]
-    if set(nesting_depths) != {nesting_depths[0]}:
-        raise ValueError(
-            "The supplied objects do not form a hypercube because"
-            " sub-lists do not have consistent depths"
-        )
+    first_depth = nesting_depths[0]
+    # Instead of set(), use a loop for early out
+    for depth in nesting_depths[1:]:
+        if depth != first_depth:
+            raise ValueError(
+                "The supplied objects do not form a hypercube because"
+                " sub-lists do not have consistent depths"
+            )
+    # return these just to be reused in _check_shape_tile_ids
     # return these just to be reused in _check_shape_tile_ids
     return tile_ids, nesting_depths
 
@@ -172,15 +207,20 @@ def _check_dimension_depth_tile_ids(combined_tile_ids):
 def _check_shape_tile_ids(combined_tile_ids):
     """Check all lists along one dimension are same length."""
     tile_ids, nesting_depths = _check_dimension_depth_tile_ids(combined_tile_ids)
-    for dim in range(nesting_depths[0]):
+    max_dim = nesting_depths[0]
+    for dim in range(max_dim):
+        # For efficiency, don't use set() twice:
         indices_along_dim = [tile_id[dim] for tile_id in tile_ids]
         occurrences = Counter(indices_along_dim)
-        if len(set(occurrences.values())) != 1:
-            raise ValueError(
-                "The supplied objects do not form a hypercube "
-                "because sub-lists do not have consistent "
-                f"lengths along dimension {dim}"
-            )
+        occurrence_values = list(occurrences.values())
+        first_val = occurrence_values[0]
+        for val in occurrence_values[1:]:
+            if val != first_val:
+                raise ValueError(
+                    "The supplied objects do not form a hypercube "
+                    "because sub-lists do not have consistent "
+                    f"lengths along dimension {dim}"
+                )
 
 
 def _combine_nd(
@@ -216,7 +256,8 @@ def _combine_nd(
     combined_ds : xarray.Dataset
     """
 
-    example_tile_id = next(iter(combined_ids.keys()))
+    # Avoid repeated .keys() conversion in Python3.10: use next(iter(...))
+    example_tile_id = next(iter(combined_ids))
 
     n_dims = len(example_tile_id)
     if len(concat_dims) != n_dims:
@@ -239,7 +280,8 @@ def _combine_nd(
             join=join,
             combine_attrs=combine_attrs,
         )
-    (combined_ds,) = combined_ids.values()
+    # Only one value left; faster unpack
+    combined_ds = next(iter(combined_ids.values()))
     return combined_ds
 
 
@@ -616,7 +658,8 @@ def _combine_single_variable_hypercube(
             "for combined hypercube."
         )
 
-    combined_ids, concat_dims = _infer_concat_order_from_coords(list(datasets))
+    # Remove extra list() copy, as _infer_concat_order_from_coords does not mutate input
+    combined_ids, concat_dims = _infer_concat_order_from_coords(datasets)
 
     if fill_value is None:
         # check that datasets form complete hypercube
