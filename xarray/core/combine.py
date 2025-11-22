@@ -45,8 +45,16 @@ def _infer_tile_ids_from_nested_list(entry, current_pos):
     """
 
     if isinstance(entry, list):
-        for i, item in enumerate(entry):
-            yield from _infer_tile_ids_from_nested_list(item, current_pos + (i,))
+        stack = [(entry, current_pos)]
+        while stack:
+            current_entry, pos = stack.pop()
+            for i in reversed(range(len(current_entry))):
+                item = current_entry[i]
+                new_pos = pos + (i,)
+                if isinstance(item, list):
+                    stack.append((item, new_pos))
+                else:
+                    yield new_pos, item
     else:
         yield current_pos, entry
 
