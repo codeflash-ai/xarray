@@ -74,7 +74,7 @@ def coerce_nc3_dtype(arr):
     Data is checked for equality, or equivalence (non-NaN values) using the
     ``(cast_array == original_array).all()``.
     """
-    dtype = str(arr.dtype)
+    dtype = arr.dtype.name
     if dtype in _nc3_dtype_coercions:
         new_dtype = _nc3_dtype_coercions[dtype]
         # TODO: raise a warning whenever casting the data-type instead?
@@ -93,9 +93,15 @@ def encode_nc3_attr_value(value):
     elif isinstance(value, str):
         value = value.encode(STRING_ENCODING)
     else:
-        value = coerce_nc3_dtype(np.atleast_1d(value))
-        if value.ndim > 1:
+        # Optimization: Avoid double wrapping by checking if already ndarray
+        if isinstance(value, np.ndarray):
+            arr = value
+        else:
+            arr = np.atleast_1d(value)
+        arr = coerce_nc3_dtype(arr)
+        if arr.ndim > 1:
             raise ValueError("netCDF attributes must be 1-dimensional")
+        value = arr
     return value
 
 
