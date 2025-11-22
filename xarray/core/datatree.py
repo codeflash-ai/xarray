@@ -1085,16 +1085,27 @@ class DataTree(
 
         if d:
             # Populate tree with children determined from data_objects mapping
+            # Pre-resolve DataTree children, orphan and cache them, and pre-resolve NodePaths, to avoid repeated work and allocations.
+            new_nodes_for_paths = []
+            np_append = new_nodes_for_paths.append  # localvar for perf
+            NodePath_cls = NodePath  # localvar for perf
+            cls_new = cls  # localvar for perf
+            # Use a single-pass loop, cache orphaned nodes, names, paths to avoid double interactions with dict etc.
             for path, data in d.items():
-                # Create and set new node
-                node_name = NodePath(path).name
+                np_path = NodePath_cls(path)
+                node_name = np_path.name
                 if isinstance(data, DataTree):
                     new_node = data.copy()
                     new_node.orphan()
                 else:
-                    new_node = cls(name=node_name, data=data)
+                    new_node = cls_new(name=node_name, data=data)
+                np_append((np_path, new_node))
+            # Bulk set nodes (still calling _set_item because _set is not public)
+            # In nearly all cases _set_item is the bottleneck, but there's no safe way to replace its O(depth) logic
+            # in this context. So just avoid redundant allocation and intermediate objects above.
+            for np_path, new_node in new_nodes_for_paths:
                 obj._set_item(
-                    path,
+                    np_path,
                     new_node,
                     allow_overwrite=False,
                     new_nodes_along_path=True,
@@ -1275,9 +1286,16 @@ class DataTree(
         pipe
         map_over_subtree
         """
-        filtered_nodes = {
-            node.path: node.ds for node in self.subtree if filterfunc(node)
-        }
+        # Use local variables for frequently accessed attributes/functions
+        subtree = self.subtree
+        filterfunc_local = filterfunc
+        filtered_nodes = {}
+        f_nodes = filtered_nodes
+        f_nodes_set = f_nodes.__setitem__
+        # Avoid dict comprehension and repeated global lookups
+        for node in subtree:
+            if filterfunc_local(node):
+                f_nodes_set(node.path, node.ds)
         return DataTree.from_dict(filtered_nodes, name=self.root.name)
 
     def match(self, pattern: str) -> DataTree:
