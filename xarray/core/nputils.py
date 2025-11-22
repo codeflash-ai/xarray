@@ -9,6 +9,7 @@ from packaging.version import Version
 
 from xarray.core.utils import is_duck_array, module_available
 from xarray.namedarray import pycompat
+from numpy.core.multiarray import normalize_axis_index
 
 # remove once numpy 2.0 is the oldest supported version
 if module_available("numpy", minversion="2.0.0.dev0"):
@@ -39,8 +40,30 @@ except ImportError:
 
 
 def _select_along_axis(values, idx, axis):
-    other_ind = np.ix_(*[np.arange(s) for s in idx.shape])
-    sl = other_ind[:axis] + (idx,) + other_ind[axis:]
+    # Fast path for 2d/1d or when idx has at most one dimension
+    # Generalizes to n-d, avoids overhead of np.ix_ when idx has no shape or is 1d
+    if idx.ndim == 1 and values.ndim >= 2:
+        # When axis is 0, idx has shape (n,)
+        if axis == 0:
+            return values[idx, np.arange(idx.shape[0])]
+        elif axis == 1:
+            return values[np.arange(idx.shape[0]), idx]
+    # Otherwise, use the generic form
+    # Avoid recomputing np.arange for each axis
+    idx_shape = idx.shape
+    if len(idx_shape) == 0:
+        # Scalar index, just simple indexing
+        sl = ()
+        for ax in range(values.ndim):
+            if ax == axis:
+                sl += (idx,)
+            else:
+                sl += (slice(None),)
+        return values[sl]
+    ranges = [np.arange(s) for s in idx_shape]
+    # Use np.ogrid to minimize memory usage for broadcasting
+    grid = np.ogrid[tuple(map(slice, idx_shape))]
+    sl = tuple(grid[:axis]) + (idx,) + tuple(grid[axis:])
     return values[sl]
 
 
@@ -48,7 +71,9 @@ def nanfirst(values, axis, keepdims=False):
     if isinstance(axis, tuple):
         (axis,) = axis
     axis = normalize_axis_index(axis, values.ndim)
-    idx_first = np.argmax(~pd.isnull(values), axis=axis)
+    mask = ~pd.isnull(values)
+    idx_first = np.argmax(mask, axis=axis)
+    # Optimization: ensure mask.any so idx is meaningful; else idx may be 0 for all-NaN slices
     result = _select_along_axis(values, idx_first, axis)
     if keepdims:
         return np.expand_dims(result, axis=axis)
