@@ -15,6 +15,16 @@ from xarray.core.variable import Variable
 from xarray.namedarray.parallelcompat import get_chunked_array_type
 from xarray.namedarray.pycompat import is_chunked_array
 
+_TIME_STRINGS_SET = {
+    "days",
+    "hours",
+    "minutes",
+    "seconds",
+    "milliseconds",
+    "microseconds",
+    "nanoseconds",
+}
+
 if TYPE_CHECKING:
     T_VarTuple = tuple[tuple[Hashable, ...], Any, dict, dict]
     T_Name = Union[Hashable, None]
@@ -238,15 +248,6 @@ def _is_time_like(units):
     # test for time-like
     if units is None:
         return False
-    time_strings = [
-        "days",
-        "hours",
-        "minutes",
-        "seconds",
-        "milliseconds",
-        "microseconds",
-        "nanoseconds",
-    ]
     units = str(units)
     # to prevent detecting units like `days accumulated` as time-like
     # special casing for datetime-units and timedelta-units (GH-8269)
@@ -259,7 +260,7 @@ def _is_time_like(units):
             return False
         return True
     else:
-        return any(tstr == units for tstr in time_strings)
+        return units in _TIME_STRINGS_SET
 
 
 def _check_fill_values(attrs, name, dtype):
