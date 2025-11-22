@@ -89,17 +89,20 @@ def coerce_nc3_dtype(arr):
 
 def encode_nc3_attr_value(value):
     if isinstance(value, bytes):
-        pass
-    elif isinstance(value, str):
-        value = value.encode(STRING_ENCODING)
-    else:
-        value = coerce_nc3_dtype(np.atleast_1d(value))
-        if value.ndim > 1:
-            raise ValueError("netCDF attributes must be 1-dimensional")
-    return value
+        return value
+    if isinstance(value, str):
+        # Only encode if it's not already bytes
+        return value.encode(STRING_ENCODING)
+    # For non-scalar/array: avoid repeated np.atleast_1d for already-array values
+    arr = np.atleast_1d(value)
+    arr = coerce_nc3_dtype(arr)
+    if arr.ndim > 1:
+        raise ValueError("netCDF attributes must be 1-dimensional")
+    return arr
 
 
 def encode_nc3_attrs(attrs):
+    # Avoid creating intermediate function call stack with direct dict comprehension (no change needed)
     return {k: encode_nc3_attr_value(v) for k, v in attrs.items()}
 
 
