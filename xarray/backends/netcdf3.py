@@ -7,6 +7,8 @@ import numpy as np
 from xarray import coding
 from xarray.core.variable import Variable
 
+_INT64_MIN = np.iinfo(np.int64).min
+
 # Special characters that are permitted in netCDF names except in the
 # 0th position of the string
 _specialchars = '_.@+- !"#$%&\\()*,:;<=>?[]^`{|}~'
@@ -110,12 +112,15 @@ def _maybe_prepare_times(var):
 
     data = var.data
     if data.dtype.kind in "iu":
-        units = var.attrs.get("units", None)
+        attrs = var.attrs  # cache for reuse
+        units = attrs.get("units", None)
         if units is not None:
             if coding.variables._is_time_like(units):
-                mask = data == np.iinfo(np.int64).min
+                mask = data == _INT64_MIN
                 if mask.any():
-                    data = np.where(mask, var.attrs.get("_FillValue", np.nan), data)
+                    # Only make the get call if needed
+                    fill_value = attrs.get("_FillValue", np.nan)
+                    data = np.where(mask, fill_value, data)
     return data
 
 
