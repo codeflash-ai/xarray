@@ -48,7 +48,9 @@ class _CachedAccessor:
 
 def _register_accessor(name, cls):
     def decorator(accessor):
-        if hasattr(cls, name):
+        # Only check for existing attribute if Warn will actually be issued
+        existing = getattr(cls, name, None)
+        if existing is not None:
             warnings.warn(
                 f"registration of accessor {accessor!r} under name {name!r} for type {cls!r} is "
                 "overriding a preexisting attribute with the same name.",
