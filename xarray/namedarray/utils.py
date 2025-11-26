@@ -8,7 +8,9 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 import numpy as np
+from dask.base import is_dask_collection
 from packaging.version import Version
+from typing_extensions import TypeGuard
 
 from xarray.namedarray._typing import ErrorOptionsWithWarn, _DimsLike
 
@@ -79,15 +81,7 @@ def is_duck_array(value: Any) -> TypeGuard[duckarray[Any, Any]]:
     # python 3.12 and higher (see https://github.com/pydata/xarray/issues/8696#issuecomment-1924588981)
     if isinstance(value, np.ndarray):
         return True
-    return (
-        hasattr(value, "ndim")
-        and hasattr(value, "shape")
-        and hasattr(value, "dtype")
-        and (
-            (hasattr(value, "__array_function__") and hasattr(value, "__array_ufunc__"))
-            or hasattr(value, "__array_namespace__")
-        )
-    )
+    return _cached_hasattr_check(type(value))
 
 
 def is_duck_dask_array(x: duckarray[Any, Any]) -> TypeGuard[DaskArray]:
@@ -196,6 +190,22 @@ def either_dict_or_kwargs(
             f"cannot specify both keyword and positional arguments to .{func_name}"
         )
     return pos_kwargs
+
+
+@lru_cache(maxsize=128)
+def _cached_hasattr_check(value_type: type) -> bool:
+    return (
+        hasattr(value_type, "ndim")
+        and hasattr(value_type, "shape")
+        and hasattr(value_type, "dtype")
+        and (
+            (
+                hasattr(value_type, "__array_function__")
+                and hasattr(value_type, "__array_ufunc__")
+            )
+            or hasattr(value_type, "__array_namespace__")
+        )
+    )
 
 
 class ReprObject:
