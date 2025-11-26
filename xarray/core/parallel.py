@@ -95,21 +95,34 @@ def make_meta(obj):
     backend.
     If obj is neither a DataArray nor Dataset, return it unaltered.
     """
+    # Fast path for non-DataArray/Dataset types
+    if not isinstance(obj, (DataArray, Dataset)):
+        return obj
+
+    # Avoid importing dask.array.utils.meta_from_array in each call
+    # Only import once, as it's used in all calls when obj is DataArray or Dataset
+    from dask.array.utils import meta_from_array
+
+    # This preserves behavioral preservation and style
+    # Convert DataArray to Dataset if needed, otherwise proceed
     if isinstance(obj, DataArray):
         obj_array = obj
         obj = dataarray_to_dataset(obj)
-    elif isinstance(obj, Dataset):
+    else:  # isinstance(obj, Dataset)
         obj_array = None
-    else:
-        return obj
 
-    from dask.array.utils import meta_from_array
+    # Preallocate meta variables to avoid repeated setattr on Dataset
+    variables = obj.variables
+    # Dataset constructor: create empty Dataset and set needed vars
 
     meta = Dataset()
-    for name, variable in obj.variables.items():
+    # Use local references for frequently accessed objects inside loop
+    meta_vars = meta._variables
+    for name, variable in variables.items():
+        # meta_from_array creates a zero-length array of the same dtype and ndim
         meta_obj = meta_from_array(variable.data, ndim=variable.ndim)
-        meta[name] = (variable.dims, meta_obj, variable.attrs)
-    meta.attrs = obj.attrs
+        meta_vars[name] = variable.__class__(variable.dims, meta_obj, variable.attrs)
+    meta._attrs = obj.attrs
     meta = meta.set_coords(obj.coords)
 
     if obj_array is not None:
