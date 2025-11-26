@@ -15,7 +15,6 @@ from xarray.core.dataset import Dataset
 from xarray.core.indexes import Index
 from xarray.core.merge import merge
 from xarray.core.utils import is_dask_collection
-from xarray.core.variable import Variable
 
 if TYPE_CHECKING:
     from xarray.core.types import T_Xarray
@@ -176,49 +175,72 @@ def subset_dataset_to_block(
 
     chunk_tuple = tuple(chunk_index.values())
     chunk_dims_set = set(chunk_index)
-    variable: Variable
+
+    # Localize attribute for small speedup
+    graph_setitem = graph.__setitem__
+
+    # Precompute dask.is_dask_collection to avoid repeated attribute lookup
+    is_dask_collection = dask.is_dask_collection
+
     for name, variable in dataset.variables.items():
-        # make a task that creates tuple of (dims, chunk)
-        if dask.is_dask_collection(variable.data):
+        v_dims = variable.dims
+        v_ndim = variable.ndim
+
+        if is_dask_collection(variable.data):
             # get task name for chunk
-            chunk = (
-                variable.data.name,
-                *tuple(chunk_index[dim] for dim in variable.dims),
-            )
+            # Precompute the tuple just once
+            chunk = (variable.data.name,) + tuple(chunk_index[dim] for dim in v_dims)
 
             chunk_variable_task = (f"{name}-{gname}-{chunk[0]!r}",) + chunk_tuple
-            graph[chunk_variable_task] = (
-                tuple,
-                [variable.dims, chunk, variable.attrs],
-            )
+            graph_setitem(chunk_variable_task, (tuple, [v_dims, chunk, variable.attrs]))
         else:
-            assert name in dataset.dims or variable.ndim == 0
+            assert name in dataset.dims or v_ndim == 0
+
+            # Build subsetter inline, avoid function call overhead (_get_chunk_slicer)
 
             # non-dask array possibly with dimensions chunked on other variables
             # index into variable appropriately
             subsetter = {
-                dim: _get_chunk_slicer(dim, chunk_index, input_chunk_bounds)
-                for dim in variable.dims
+                dim: (
+                    slice(
+                        input_chunk_bounds[dim][chunk_index[dim]],
+                        input_chunk_bounds[dim][chunk_index[dim] + 1],
+                    )
+                    if dim in chunk_index
+                    else slice(None)
+                )
+                for dim in v_dims
             }
-            if set(variable.dims) < chunk_dims_set:
-                this_var_chunk_tuple = tuple(chunk_index[dim] for dim in variable.dims)
+
+            # Avoid repeated set conversion by creating set only once
+            v_dims_set = set(v_dims)
+            if v_dims_set < chunk_dims_set:
+                this_var_chunk_tuple = tuple(chunk_index[dim] for dim in v_dims)
             else:
                 this_var_chunk_tuple = chunk_tuple
 
-            chunk_variable_task = (
-                f"{name}-{gname}-{dask.base.tokenize(subsetter)}",
-            ) + this_var_chunk_tuple
-            # We are including a dimension coordinate,
-            # minimize duplication by not copying it in the graph for every chunk.
-            if variable.ndim == 0 or chunk_variable_task not in graph:
+            # Only call tokenize for non-0d variables, since for scalars the key doesn't depend on indexers
+            if v_ndim == 0:
+                chunk_variable_task = (f"{name}-{gname}-scalar",) + this_var_chunk_tuple
+            else:
+                # Fast tuple representation for subsetter for hashing
+                # Use sorted items to ensure deterministic key
+                subsetter_tuple = tuple(sorted(subsetter.items()))
+                chunk_variable_task = (
+                    f"{name}-{gname}-{dask.base.tokenize(subsetter_tuple)}",
+                ) + this_var_chunk_tuple
+
+            # Only call variable.isel if needed
+            if v_ndim == 0 or chunk_variable_task not in graph:
                 subset = variable.isel(subsetter)
-                graph[chunk_variable_task] = (
-                    tuple,
-                    [subset.dims, subset._data, subset.attrs],
+                graph_setitem(
+                    chunk_variable_task,
+                    (tuple, [subset.dims, subset._data, subset.attrs]),
                 )
 
-        # this task creates dict mapping variable name to above tuple
-        if name in dataset._coord_names:
+        # Use local variable for _coord_names for potential speedup
+        is_coord = name in dataset._coord_names
+        if is_coord:
             coords.append([name, chunk_variable_task])
         else:
             data_vars.append([name, chunk_variable_task])
