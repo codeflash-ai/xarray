@@ -183,13 +183,36 @@ def convert_calendar(
         )
 
         # Convert the source datetimes, but override the day of year with our new day of years.
+
+        # Convert the source datetimes, but override the day of year with our new day of years.
+        # PREALLOCATE batch arrays for improved performance
+        arr = time.variable._data.array
+        n = arr.shape[0]
+        years = np.empty(n, dtype=int)
+        hours = np.empty(n, dtype=int)
+        minutes = np.empty(n, dtype=int)
+        seconds = np.empty(n, dtype=int)
+        microseconds = np.empty(n, dtype=int)
+        # Avoid expensive attribute lookup inside Python loop; get fields only once
+        for i in range(n):
+            d = arr[i]
+            years[i] = d.year
+            hours[i] = d.hour
+            minutes[i] = d.minute
+            seconds[i] = d.second
+            microseconds[i] = d.microsecond
+
         out[dim] = DataArray(
-            [
-                _convert_to_new_calendar_with_new_day_of_year(
-                    date, newdoy, calendar, use_cftime
-                )
-                for date, newdoy in zip(time.variable._data.array, new_doy)
-            ],
+            _convert_to_new_calendar_with_new_day_of_year_array(
+                years,
+                np.asarray(new_doy),
+                hours,
+                minutes,
+                seconds,
+                microseconds,
+                calendar,
+                use_cftime,
+            ),
             dims=(dim,),
             name=dim,
         )
@@ -340,4 +363,35 @@ def interp_calendar(source, target, dim="time"):
     target_idx = _datetime_to_decimal_year(target, dim=dim, calendar=target_calendar)
     out = out.interp(**{dim: target_idx})
     out[dim] = target
+    return out
+
+
+def _convert_to_new_calendar_with_new_day_of_year_array(
+    years, day_of_years, hours, minutes, seconds, microseconds, calendar, use_cftime
+):
+    """
+    Vectorized batch conversion: Returns new datetimes in target calendar, given arrays of years, new day-of-years, and time-of-day attributes.
+    Invalid dates (ValueError) are replaced by np.nan.
+    """
+    n = len(years)
+    out = np.empty(n, dtype="O")
+    date_type = get_date_type(calendar, use_cftime)
+    for i in range(n):
+        try:
+            new_date = cftime.num2date(
+                day_of_years[i] - 1,
+                f"days since {years[i]}-01-01",
+                calendar=calendar if use_cftime else "standard",
+            )
+            out[i] = date_type(
+                years[i],
+                new_date.month,
+                new_date.day,
+                hours[i],
+                minutes[i],
+                seconds[i],
+                microseconds[i],
+            )
+        except ValueError:
+            out[i] = np.nan
     return out
