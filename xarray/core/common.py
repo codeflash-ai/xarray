@@ -280,8 +280,10 @@ class AttrAccessMixin:
             # this avoids an infinite loop when pickle looks for the
             # __setstate__ attribute before the xarray object is initialized
             for source in self._attr_sources:
-                with suppress(KeyError):
+                try:
                     return source[name]
+                except KeyError:
+                    continue
         raise AttributeError(
             f"{type(self).__name__!r} object has no attribute {name!r}"
         )
