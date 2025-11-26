@@ -2076,4 +2076,9 @@ def _contains_datetime_like_objects(var: T_Variable) -> bool:
     """Check if a variable contains datetime like objects (either
     np.datetime64, np.timedelta64, or cftime.datetime)
     """
-    return is_np_datetime_like(var.dtype) or contains_cftime_datetimes(var)
+    # Short-circuit and avoid unnecessary attribute access if dtype is numpy datetime-like
+    dt = np.dtype(var.dtype)
+    dt_type = dt.type
+    if dt_type is np.datetime64 or dt_type is np.timedelta64:
+        return True
+    return contains_cftime_datetimes(var)
