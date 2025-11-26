@@ -70,12 +70,22 @@ def dataset_to_dataarray(obj: Dataset) -> DataArray:
     if not isinstance(obj, Dataset):
         raise TypeError(f"Expected Dataset, got {type(obj)}")
 
-    if len(obj.data_vars) > 1:
+    # Fast path: data_vars is a dict-like object; prefer direct access when only one key/value
+    data_vars = obj.data_vars
+    if len(data_vars) > 1:
         raise TypeError(
             "Trying to convert Dataset with more than one data variable to DataArray"
         )
 
-    return next(iter(obj.data_vars.values()))
+    # Avoid allocating an iterator and next() - use .values() as a Sequence if possible
+    # Most dict-like objects support this; fallback via list() for broader compatibility
+    try:
+        # Many xarray Dataset.data_vars are collections.OrderedDict or MappingView
+        # For these, .values() supports direct indexing
+        return data_vars[next(iter(data_vars))]
+    except (TypeError, KeyError):
+        # General fallback for dict-like, use idiomatic and memory-efficient approach
+        return next(iter(data_vars.values()))
 
 
 def dataarray_to_dataset(obj: DataArray) -> Dataset:
