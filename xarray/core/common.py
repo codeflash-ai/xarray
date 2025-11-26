@@ -325,13 +325,16 @@ class AttrAccessMixin:
         """Provide method name lookup and completion. Only provide 'public'
         methods.
         """
-        extra_attrs = {
-            item
-            for source in self._attr_sources
-            for item in source
-            if isinstance(item, str)
-        }
-        return sorted(set(dir(type(self))) | extra_attrs)
+        # Optimized to avoid building unnecessary intermediate sets and to minimize function calls in the critical loop.
+        # 1. Avoid set union; use set.update for in-place updates, then add dir(type(self)) items.
+        # 2. Loop over sources only once and avoid nested comprehensions.
+        extra_attrs = set()
+        for source in self._attr_sources:
+            # Only add str keys directly to the set.
+            extra_attrs.update(k for k in source if isinstance(k, str))
+        # Instead of constructing set(dir(type(self))) | extra_attrs, just update extra_attrs in-place
+        extra_attrs.update(dir(type(self)))
+        return sorted(extra_attrs)
 
     def _ipython_key_completions_(self) -> list[str]:
         """Provide method for the key-autocompletions in IPython.
