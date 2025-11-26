@@ -138,7 +138,10 @@ unhashable = """
 
 
 def _type_ignore(ignore: str) -> str:
-    return f"  # type:ignore[{ignore}]" if ignore else ""
+    # Fast-path: avoid f-string formatting when ignore is empty
+    if not ignore:
+        return ""
+    return f"  # type:ignore[{ignore}]"
 
 
 FuncType = Sequence[tuple[Optional[str], Optional[str]]]
@@ -149,14 +152,19 @@ def binops(
     other_type: str, return_type: str = "Self", type_ignore_eq: str = "override"
 ) -> list[OpsType]:
     extras = {"other_type": other_type, "return_type": return_type}
+    # Pre-calculate the type_ignore for eq/ne only once outside the list
+    type_ignore_eq_str = _type_ignore(type_ignore_eq)
+    # Avoid repeated dict creation for `extras | {'type_ignore': ''}` (use .copy())
+    extras_empty_type_ignore = extras.copy()
+    extras_empty_type_ignore["type_ignore"] = ""
+
+    extras_type_ignore_eq = extras.copy()
+    extras_type_ignore_eq["type_ignore"] = type_ignore_eq_str
+
     return [
         ([(None, None)], required_method_binary, extras),
-        (BINOPS_NUM + BINOPS_CMP, template_binop, extras | {"type_ignore": ""}),
-        (
-            BINOPS_EQNE,
-            template_binop,
-            extras | {"type_ignore": _type_ignore(type_ignore_eq)},
-        ),
+        (BINOPS_NUM + BINOPS_CMP, template_binop, extras_empty_type_ignore),
+        (BINOPS_EQNE, template_binop, extras_type_ignore_eq),
         ([(None, None)], unhashable, extras),
         (BINOPS_REFLEXIVE, template_reflexive, extras),
     ]
