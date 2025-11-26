@@ -138,7 +138,10 @@ unhashable = """
 
 
 def _type_ignore(ignore: str) -> str:
-    return f"  # type:ignore[{ignore}]" if ignore else ""
+    # Optimize to avoid unnecessary string formatting when no ignore is needed
+    if ignore:
+        return f"  # type:ignore[{ignore}]"
+    return ""
 
 
 FuncType = Sequence[tuple[Optional[str], Optional[str]]]
@@ -198,12 +201,17 @@ def binops_overload(
 
 def inplace(other_type: str, type_ignore: str = "") -> list[OpsType]:
     extras = {"other_type": other_type}
+    # Only create the merged dict once per call
+    merged_extras = dict(extras)
+    merged_extras["type_ignore"] = _type_ignore(type_ignore)
+
+    # Precompute operations data for reuse and avoid list construction at runtime
     return [
         ([(None, None)], required_method_inplace, extras),
         (
             BINOPS_INPLACE,
             template_inplace,
-            extras | {"type_ignore": _type_ignore(type_ignore)},
+            merged_extras,
         ),
     ]
 
