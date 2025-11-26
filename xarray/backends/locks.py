@@ -155,13 +155,15 @@ def _get_scheduler(get=None, collection=None) -> str | None:
     except ImportError:
         return None
 
-    try:
-        from dask.distributed import Client
+    # Check for distributed scheduler without expensive import
+    if hasattr(actual_get, "__self__"):
+        try:
+            from dask.distributed import Client
 
-        if isinstance(actual_get.__self__, Client):
-            return "distributed"
-    except (ImportError, AttributeError):
-        pass
+            if isinstance(actual_get.__self__, Client):
+                return "distributed"
+        except ImportError:
+            pass
 
     try:
         # As of dask=2.6, dask.multiprocessing requires cloudpickle to be installed
