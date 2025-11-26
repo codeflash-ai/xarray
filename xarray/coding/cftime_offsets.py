@@ -76,6 +76,18 @@ except ImportError:
 if TYPE_CHECKING:
     from xarray.core.types import InclusiveOptions, SideOptions
 
+_CALENDARS = {
+    "noleap": "DatetimeNoLeap",
+    "360_day": "Datetime360Day",
+    "365_day": "DatetimeNoLeap",
+    "366_day": "DatetimeAllLeap",
+    "gregorian": "DatetimeGregorian",
+    "proleptic_gregorian": "DatetimeProlepticGregorian",
+    "julian": "DatetimeJulian",
+    "all_leap": "DatetimeAllLeap",
+    "standard": "DatetimeGregorian",
+}
+
 
 def get_date_type(calendar, use_cftime=True):
     """Return the cftime date type for a given calendar name."""

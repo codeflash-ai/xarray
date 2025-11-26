@@ -7,6 +7,7 @@ from xarray.coding.cftime_offsets import date_range_like, get_date_type
 from xarray.coding.cftimeindex import CFTimeIndex
 from xarray.coding.times import _should_cftime_be_used, convert_times
 from xarray.core.common import _contains_datetime_like_objects, is_np_datetime_like
+from functools import lru_cache
 
 try:
     import cftime
@@ -24,7 +25,7 @@ _CALENDARS_WITHOUT_YEAR_ZERO = [
 
 def _days_in_year(year, calendar, use_cftime=True):
     """Return the number of days in the input year according to the input calendar."""
-    date_type = get_date_type(calendar, use_cftime=use_cftime)
+    date_type = _cached_get_date_type(calendar, use_cftime=use_cftime)
     if year == -1 and calendar in _CALENDARS_WITHOUT_YEAR_ZERO:
         difference = date_type(year + 2, 1, 1) - date_type(year, 1, 1)
     else:
@@ -341,3 +342,8 @@ def interp_calendar(source, target, dim="time"):
     out = out.interp(**{dim: target_idx})
     out[dim] = target
     return out
+
+
+@lru_cache(maxsize=32)
+def _cached_get_date_type(calendar, use_cftime=True):
+    return get_date_type(calendar, use_cftime=use_cftime)
