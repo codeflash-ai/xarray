@@ -358,25 +358,31 @@ def get_squeeze_dims(
     if dim is None and axis is None:
         return [d for d, s in xarray_obj.sizes.items() if s == 1]
 
-    if isinstance(dim, Iterable) and not isinstance(dim, str):
-        dim = list(dim)
-    elif dim is not None:
-        dim = [dim]
+    # Fast-path for direct single dim or axis
+    if dim is not None:
+        if isinstance(dim, str) or not isinstance(dim, Iterable):
+            dim = [dim]
+        else:
+            # Avoid unnecessary conversion if already list/tuple
+            if not isinstance(dim, list):
+                dim = list(dim)
     else:
-        assert axis is not None
         if isinstance(axis, int):
             axis = [axis]
-        axis = list(axis)
-        if any(not isinstance(a, int) for a in axis):
+        elif not isinstance(axis, list):
+            axis = list(axis)
+        if any(type(a) is not int for a in axis):
             raise TypeError("parameter `axis` must be int or iterable of int.")
         alldims = list(xarray_obj.sizes.keys())
         dim = [alldims[a] for a in axis]
 
-    if any(xarray_obj.sizes[k] > 1 for k in dim):
-        raise ValueError(
-            "cannot select a dimension to squeeze out "
-            "which has length greater than one"
-        )
+    # Use any() directly for improved short-circuit
+    for k in dim:
+        if xarray_obj.sizes[k] > 1:
+            raise ValueError(
+                "cannot select a dimension to squeeze out "
+                "which has length greater than one"
+            )
     return dim
 
 
