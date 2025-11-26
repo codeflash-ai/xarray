@@ -15,34 +15,26 @@ import pandas as pd
 from numpy.typing import ArrayLike
 
 import xarray as xr  # only for Dataset and DataArray
-from xarray.core import common, dtypes, duck_array_ops, indexing, nputils, ops, utils
+from xarray.core import (common, dtypes, duck_array_ops, indexing, nputils,
+                         ops, utils)
 from xarray.core.arithmetic import VariableArithmetic
 from xarray.core.common import AbstractArray
-from xarray.core.indexing import (
-    BasicIndexer,
-    OuterIndexer,
-    PandasIndexingAdapter,
-    VectorizedIndexer,
-    as_indexable,
-)
+from xarray.core.indexing import (BasicIndexer, OuterIndexer,
+                                  PandasIndexingAdapter, VectorizedIndexer,
+                                  as_indexable)
 from xarray.core.options import OPTIONS, _get_keep_attrs
-from xarray.core.utils import (
-    OrderedSet,
-    _default,
-    consolidate_dask_from_array_kwargs,
-    decode_numpy_dict_values,
-    drop_dims_from_indexers,
-    either_dict_or_kwargs,
-    emit_user_level_warning,
-    ensure_us_time_resolution,
-    infix_dims,
-    is_dict_like,
-    is_duck_array,
-    is_duck_dask_array,
-    maybe_coerce_to_str,
-)
-from xarray.namedarray.core import NamedArray, _raise_if_any_duplicate_dimensions
-from xarray.namedarray.pycompat import integer_types, is_0d_dask_array, to_duck_array
+from xarray.core.utils import (OrderedSet, _default,
+                               consolidate_dask_from_array_kwargs,
+                               decode_numpy_dict_values,
+                               drop_dims_from_indexers, either_dict_or_kwargs,
+                               emit_user_level_warning,
+                               ensure_us_time_resolution, infix_dims,
+                               is_dict_like, is_duck_array, is_duck_dask_array,
+                               maybe_coerce_to_str)
+from xarray.namedarray.core import (NamedArray,
+                                    _raise_if_any_duplicate_dimensions)
+from xarray.namedarray.pycompat import (integer_types, is_0d_dask_array,
+                                        to_duck_array)
 
 NON_NUMPY_SUPPORTED_ARRAY_TYPES = (
     indexing.ExplicitlyIndexed,
@@ -52,15 +44,9 @@ NON_NUMPY_SUPPORTED_ARRAY_TYPES = (
 BASIC_INDEXING_TYPES = integer_types + (slice,)
 
 if TYPE_CHECKING:
-    from xarray.core.types import (
-        Dims,
-        ErrorOptionsWithWarn,
-        PadModeOptions,
-        PadReflectOptions,
-        QuantileMethods,
-        Self,
-        T_DuckArray,
-    )
+    from xarray.core.types import (Dims, ErrorOptionsWithWarn, PadModeOptions,
+                                   PadReflectOptions, QuantileMethods, Self,
+                                   T_DuckArray)
     from xarray.namedarray.parallelcompat import ChunkManagerEntrypoint
 
 
