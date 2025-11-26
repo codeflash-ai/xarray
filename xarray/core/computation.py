@@ -934,8 +934,7 @@ def apply_ufunc(
         the style of NumPy universal functions [1]_ (if this is not the case,
         set ``vectorize=True``). If this function returns multiple outputs, you
         must set ``output_core_dims`` as well.
-    *args : Dataset, DataArray, DataArrayGroupBy, DatasetGroupBy, Variable, \
-        numpy.ndarray, dask.array.Array or scalar
+    *args : Dataset, DataArray, DataArrayGroupBy, DatasetGroupBy, Variable,         numpy.ndarray, dask.array.Array or scalar
         Mix of labeled and/or unlabeled arrays to which to apply the function.
     input_core_dims : sequence of sequence, optional
         List of the same length as ``args`` giving the list of core dimensions
@@ -1222,20 +1221,40 @@ def apply_ufunc(
     if isinstance(keep_attrs, bool):
         keep_attrs = "override" if keep_attrs else "drop"
 
-    variables_vfunc = functools.partial(
-        apply_variable_ufunc,
-        func,
-        signature=signature,
-        exclude_dims=exclude_dims,
-        keep_attrs=keep_attrs,
-        dask=dask,
-        vectorize=vectorize,
-        output_dtypes=output_dtypes,
-        dask_gufunc_kwargs=dask_gufunc_kwargs,
-    )
+    # Classify arguments with a single pass for faster mutually-exclusive dispatch
+    is_groupby = is_dataarray = is_dataset = is_variable = False
+    for arg in args:
+        if not is_groupby and 'GroupBy' in locals() and isinstance(arg, GroupBy):
+            is_groupby = True
+            break  # groupby prevails, no need to check further
 
-    # feed groupby-apply_ufunc through apply_groupby_func
-    if any(isinstance(a, GroupBy) for a in args):
+    if not is_groupby:
+        for arg in args:
+            # Only check for DataArray, dict-like (Dataset), Variable in a single pass
+            if not is_dataarray and isinstance(arg, DataArray):
+                is_dataarray = True
+            elif not is_dataset and is_dict_like(arg):
+                is_dataset = True
+            elif not is_variable and isinstance(arg, Variable):
+                is_variable = True
+
+    variables_vfunc = None
+    if not is_groupby:
+        # Only build this if we don't use apply_groupby_func
+        variables_vfunc = functools.partial(
+            apply_variable_ufunc,
+            func,
+            signature=signature,
+            exclude_dims=exclude_dims,
+            keep_attrs=keep_attrs,
+            dask=dask,
+            vectorize=vectorize,
+            output_dtypes=output_dtypes,
+            dask_gufunc_kwargs=dask_gufunc_kwargs,
+        )
+
+    if is_groupby:
+        # Only build/call what is needed for groupby:
         this_apply = functools.partial(
             apply_ufunc,
             func,
@@ -1252,8 +1271,7 @@ def apply_ufunc(
             dask_gufunc_kwargs=dask_gufunc_kwargs,
         )
         return apply_groupby_func(this_apply, *args)
-    # feed datasets apply_variable_ufunc through apply_dataset_vfunc
-    elif any(is_dict_like(a) for a in args):
+    elif is_dataset:
         return apply_dataset_vfunc(
             variables_vfunc,
             *args,
@@ -1265,8 +1283,7 @@ def apply_ufunc(
             keep_attrs=keep_attrs,
             on_missing_core_dim=on_missing_core_dim,
         )
-    # feed DataArray apply_variable_ufunc through apply_dataarray_vfunc
-    elif any(isinstance(a, DataArray) for a in args):
+    elif is_dataarray:
         return apply_dataarray_vfunc(
             variables_vfunc,
             *args,
@@ -1275,8 +1292,7 @@ def apply_ufunc(
             exclude_dims=exclude_dims,
             keep_attrs=keep_attrs,
         )
-    # feed Variables directly through apply_variable_ufunc
-    elif any(isinstance(a, Variable) for a in args):
+    elif is_variable:
         return variables_vfunc(*args)
     else:
         # feed anything else through apply_array_ufunc
