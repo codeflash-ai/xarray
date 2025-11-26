@@ -8,6 +8,8 @@ from xarray.coding.cftimeindex import CFTimeIndex
 from xarray.coding.times import _should_cftime_be_used, convert_times
 from xarray.core.common import _contains_datetime_like_objects, is_np_datetime_like
 
+_days_in_year_cache = {}
+
 try:
     import cftime
 except ImportError:
@@ -24,12 +26,19 @@ _CALENDARS_WITHOUT_YEAR_ZERO = [
 
 def _days_in_year(year, calendar, use_cftime=True):
     """Return the number of days in the input year according to the input calendar."""
+    key = (year, calendar, use_cftime)
+    if key in _days_in_year_cache:
+        return _days_in_year_cache[key]
+
     date_type = get_date_type(calendar, use_cftime=use_cftime)
     if year == -1 and calendar in _CALENDARS_WITHOUT_YEAR_ZERO:
         difference = date_type(year + 2, 1, 1) - date_type(year, 1, 1)
     else:
         difference = date_type(year + 1, 1, 1) - date_type(year, 1, 1)
-    return difference.days
+
+    result = difference.days
+    _days_in_year_cache[key] = result
+    return result
 
 
 def convert_calendar(
@@ -222,11 +231,10 @@ def _interpolate_day_of_year(time, target_calendar, use_cftime):
     """
     year = int(time.dt.year[0])
     source_calendar = time.dt.calendar
-    return np.round(
-        _days_in_year(year, target_calendar, use_cftime)
-        * time.dt.dayofyear
-        / _days_in_year(year, source_calendar, use_cftime)
-    ).astype(int)
+
+    days_in_target = _days_in_year(year, target_calendar, use_cftime)
+    days_in_source = _days_in_year(year, source_calendar, use_cftime)
+    return np.round(days_in_target * time.dt.dayofyear / days_in_source).astype(int)
 
 
 def _convert_to_new_calendar_with_new_day_of_year(
