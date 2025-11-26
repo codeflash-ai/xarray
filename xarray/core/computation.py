@@ -1161,14 +1161,16 @@ def apply_ufunc(
     from xarray.core.groupby import GroupBy
     from xarray.core.variable import Variable
 
+
+    num_args = len(args)
     if input_core_dims is None:
-        input_core_dims = ((),) * (len(args))
-    elif len(input_core_dims) != len(args):
+        input_core_dims = ((),) * num_args
+    elif len(input_core_dims) != num_args:
         raise ValueError(
             f"input_core_dims must be None or a tuple with the length same to "
             f"the number of arguments. "
             f"Given {len(input_core_dims)} input_core_dims: {input_core_dims}, "
-            f" but number of args is {len(args)}."
+            f" but number of args is {num_args}."
         )
 
     if kwargs is None:
@@ -1234,53 +1236,96 @@ def apply_ufunc(
         dask_gufunc_kwargs=dask_gufunc_kwargs,
     )
 
-    # feed groupby-apply_ufunc through apply_groupby_func
-    if any(isinstance(a, GroupBy) for a in args):
-        this_apply = functools.partial(
-            apply_ufunc,
-            func,
-            input_core_dims=input_core_dims,
-            output_core_dims=output_core_dims,
-            exclude_dims=exclude_dims,
-            join=join,
-            dataset_join=dataset_join,
-            dataset_fill_value=dataset_fill_value,
-            keep_attrs=keep_attrs,
-            dask=dask,
-            vectorize=vectorize,
-            output_dtypes=output_dtypes,
-            dask_gufunc_kwargs=dask_gufunc_kwargs,
-        )
-        return apply_groupby_func(this_apply, *args)
-    # feed datasets apply_variable_ufunc through apply_dataset_vfunc
-    elif any(is_dict_like(a) for a in args):
-        return apply_dataset_vfunc(
-            variables_vfunc,
-            *args,
-            signature=signature,
-            join=join,
-            exclude_dims=exclude_dims,
-            dataset_join=dataset_join,
-            fill_value=dataset_fill_value,
-            keep_attrs=keep_attrs,
-            on_missing_core_dim=on_missing_core_dim,
-        )
-    # feed DataArray apply_variable_ufunc through apply_dataarray_vfunc
-    elif any(isinstance(a, DataArray) for a in args):
-        return apply_dataarray_vfunc(
-            variables_vfunc,
-            *args,
-            signature=signature,
-            join=join,
-            exclude_dims=exclude_dims,
-            keep_attrs=keep_attrs,
-        )
-    # feed Variables directly through apply_variable_ufunc
-    elif any(isinstance(a, Variable) for a in args):
-        return variables_vfunc(*args)
+    # Fast single input type dispatch (most common use: DataArray or Variable)
+    # Avoid scanning args multiple times.
+    if num_args == 1:
+        a = args[0]
+        # These are direct checks, O(1)
+        if isinstance(a, GroupBy):
+            this_apply = functools.partial(
+                apply_ufunc,
+                func,
+                input_core_dims=input_core_dims,
+                output_core_dims=output_core_dims,
+                exclude_dims=exclude_dims,
+                join=join,
+                dataset_join=dataset_join,
+                dataset_fill_value=dataset_fill_value,
+                keep_attrs=keep_attrs,
+                dask=dask,
+                vectorize=vectorize,
+                output_dtypes=output_dtypes,
+                dask_gufunc_kwargs=dask_gufunc_kwargs,
+            )
+            return apply_groupby_func(this_apply, a)
+        elif is_dict_like(a):
+            return apply_dataset_vfunc(
+                variables_vfunc, a,
+                signature=signature,
+                join=join,
+                exclude_dims=exclude_dims,
+                dataset_join=dataset_join,
+                fill_value=dataset_fill_value,
+                keep_attrs=keep_attrs,
+                on_missing_core_dim=on_missing_core_dim,
+            )
+        elif isinstance(a, DataArray):
+            return apply_dataarray_vfunc(
+                variables_vfunc, a,
+                signature=signature,
+                join=join,
+                exclude_dims=exclude_dims,
+                keep_attrs=keep_attrs,
+            )
+        elif isinstance(a, Variable):
+            return variables_vfunc(a)
+        else:
+            return apply_array_ufunc(func, a, dask=dask)
     else:
-        # feed anything else through apply_array_ufunc
-        return apply_array_ufunc(func, *args, dask=dask)
+        # For n-args, minimize scans by combining type checks to a single pass
+        # This exploits the fact that the majority case is all DataArray or all Variable args
+        types = [type(arg) for arg in args]
+        # Most common case: all args are DataArray
+        if DataArray in types:
+            return apply_dataarray_vfunc(
+                variables_vfunc, *args,
+                signature=signature,
+                join=join,
+                exclude_dims=exclude_dims,
+                keep_attrs=keep_attrs,
+            )
+        elif GroupBy in types:
+            this_apply = functools.partial(
+                apply_ufunc,
+                func,
+                input_core_dims=input_core_dims,
+                output_core_dims=output_core_dims,
+                exclude_dims=exclude_dims,
+                join=join,
+                dataset_join=dataset_join,
+                dataset_fill_value=dataset_fill_value,
+                keep_attrs=keep_attrs,
+                dask=dask,
+                vectorize=vectorize,
+                output_dtypes=output_dtypes,
+                dask_gufunc_kwargs=dask_gufunc_kwargs,
+            )
+            return apply_groupby_func(this_apply, *args)
+        elif any(is_dict_like(arg) for arg in args):
+            return apply_dataset_vfunc(
+                variables_vfunc, *args,
+                signature=signature,
+                join=join,
+                exclude_dims=exclude_dims,
+                dataset_join=dataset_join,
+                fill_value=dataset_fill_value,
+                keep_attrs=keep_attrs,
+                on_missing_core_dim=on_missing_core_dim,
+            )
+        elif Variable in types:
+            return variables_vfunc(*args)
+        else:
+            return apply_array_ufunc(func, *args, dask=dask)
 
 
 def cov(
