@@ -70,12 +70,12 @@ _cached_duck_array_modules: dict[ModType, DuckArrayModule] = {}
 
 
 def _get_cached_duck_array_module(mod: ModType) -> DuckArrayModule:
-    if mod not in _cached_duck_array_modules:
+    try:
+        return _cached_duck_array_modules[mod]
+    except KeyError:
         duckmod = DuckArrayModule(mod)
         _cached_duck_array_modules[mod] = duckmod
         return duckmod
-    else:
-        return _cached_duck_array_modules[mod]
 
 
 def array_type(mod: ModType) -> DuckArrayTypes:
