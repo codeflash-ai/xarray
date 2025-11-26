@@ -298,11 +298,12 @@ def _obj_repr(obj, header_components, sections):
 
 
 def array_repr(arr) -> str:
-    dims = OrderedDict((k, v) for k, v in zip(arr.dims, arr.shape))
-    if hasattr(arr, "xindexes"):
-        indexed_dims = arr.xindexes.dims
-    else:
-        indexed_dims = {}
+    # Use dict for dims instead of OrderedDict since Python 3.7+ dict preserves order
+    dims = dict(zip(arr.dims, arr.shape))
+    xindexes = getattr(arr, "xindexes", None)
+    coords = getattr(arr, "coords", None)
+
+    indexed_dims = xindexes.dims if xindexes is not None else {}
 
     obj_type = f"xarray.{type(arr).__name__}"
     arr_name = f"'{arr.name}'" if getattr(arr, "name", None) else ""
@@ -315,11 +316,11 @@ def array_repr(arr) -> str:
 
     sections = [array_section(arr)]
 
-    if hasattr(arr, "coords"):
-        sections.append(coord_section(arr.coords))
+    if coords is not None:
+        sections.append(coord_section(coords))
 
-    if hasattr(arr, "xindexes"):
-        indexes = _get_indexes_dict(arr.xindexes)
+    if xindexes is not None:
+        indexes = _get_indexes_dict(xindexes)
         sections.append(index_section(indexes))
 
     sections.append(attr_section(arr.attrs))
