@@ -24,15 +24,12 @@ class _CachedAccessor:
 
         # Use the same dict as @pandas.util.cache_readonly.
         # It must be explicitly declared in obj.__slots__.
-        try:
-            cache = obj._cache
-        except AttributeError:
+        cache = getattr(obj, "_cache", None)
+        if cache is None:
             cache = obj._cache = {}
 
-        try:
+        if self._name in cache:
             return cache[self._name]
-        except KeyError:
-            pass
 
         try:
             accessor_obj = self._accessor(obj)
