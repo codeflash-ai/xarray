@@ -343,7 +343,6 @@ class DummyFileManager(FileManager):
         self._value = value
 
     def acquire(self, needs_lock=True):
-        del needs_lock  # ignored
         return self._value
 
     @contextlib.contextmanager
