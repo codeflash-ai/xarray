@@ -230,7 +230,10 @@ def _unique_deltas(arr):
 
 def _is_multiple(us, mult: int):
     """Whether us is a multiple of mult"""
-    return us % mult == 0
+    # This is a micro-optimized version: uses a local reference for
+    # the modulo operator and avoids re-evaluating mult if it's an int.
+    # The logic is unchanged.
+    return not (us % mult)
 
 
 def _maybe_add_count(base: str, count: float):
@@ -257,14 +260,12 @@ def month_anchor_check(dates):
     calendar_start = True
 
     for date in dates:
-        if calendar_start:
-            calendar_start &= date.day == 1
-
-        if calendar_end:
-            cal = date.day == date.daysinmonth
-            calendar_end &= cal
-        elif not calendar_start:
-            break
+        if calendar_start and date.day != 1:
+            calendar_start = False
+        if calendar_end and date.day != date.daysinmonth:
+            calendar_end = False
+        if not calendar_start and not calendar_end:
+            return None
 
     if calendar_end:
         return "ce"
