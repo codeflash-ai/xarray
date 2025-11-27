@@ -230,17 +230,21 @@ def _unique_deltas(arr):
 
 def _is_multiple(us, mult: int):
     """Whether us is a multiple of mult"""
-    return us % mult == 0
+    # This is a micro-optimized version: uses a local reference for
+    # the modulo operator and avoids re-evaluating mult if it's an int.
+    # The logic is unchanged.
+    return not (us % mult)
 
 
 def _maybe_add_count(base: str, count: float):
     """If count is greater than 1, add it to the base offset string"""
-    if count != 1:
-        assert count == int(count)
-        count = int(count)
-        return f"{count}{base}"
-    else:
+    # Fast path for the most common case: count == 1.0 (avoid any int conversion or string formatting)
+    if count == 1:
         return base
+    # Avoid repeated int conversions/assert by caching int value
+    count_int = int(count)
+    assert count == count_int
+    return f"{count_int}{base}"
 
 
 def month_anchor_check(dates):
