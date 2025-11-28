@@ -2602,7 +2602,13 @@ class IndexVariable(Variable):
 
         # Unlike in Variable, always eagerly load values into memory
         if not isinstance(self._data, PandasIndexingAdapter):
-            self._data = PandasIndexingAdapter(self._data)
+            # Avoid multiple conversions: if already a pd.Index, inject directly
+            array = self._data
+            if isinstance(array, pd.Index):
+                self._data = PandasIndexingAdapter(array)
+            else:
+                # Let PandasIndexingAdapter perform the conversion only once
+                self._data = PandasIndexingAdapter(array)
 
     def __dask_tokenize__(self) -> object:
         from dask.base import normalize_token
@@ -2784,15 +2790,22 @@ class IndexVariable(Variable):
         assert self.ndim == 1
         index = self._data.array
         if isinstance(index, pd.MultiIndex):
-            # set default names for multi-index unnamed levels so that
-            # we can safely rename dimension / coordinate later
-            valid_level_names = [
-                name or f"{self.dims[0]}_level_{i}"
-                for i, name in enumerate(index.names)
-            ]
-            index = index.set_names(valid_level_names)
+            # Only create new names if necessary
+            names = index.names
+            if any(name is None for name in names):
+                # set default names for multi-index unnamed levels so that
+                # we can safely rename dimension / coordinate later
+                valid_level_names = [
+                    name if name is not None else f"{self.dims[0]}_level_{i}"
+                    for i, name in enumerate(names)
+                ]
+                index = index.set_names(valid_level_names)
         else:
-            index = index.set_names(self.name)
+            current_name = index.name
+            # Only call set_names if name is actually different to avoid unnecessary object creation
+            name = self.name
+            if current_name != name:
+                index = index.set_names(name)
         return index
 
     def to_index(self) -> pd.Index:
