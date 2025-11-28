@@ -332,17 +332,26 @@ def _apply_loffset(
             f"Got {loffset}."
         )
 
+    # Delay conversion if possible and combine all conditions at once,
+    # leveraging fast checks and avoiding unnecessary work.
+    idx = result.index
     if isinstance(loffset, str):
-        loffset = pd.tseries.frequencies.to_offset(loffset)
+        loffset_obj = pd.tseries.frequencies.to_offset(loffset)
+    else:
+        loffset_obj = loffset
 
-    needs_offset = (
-        isinstance(loffset, (pd.DateOffset, datetime.timedelta))
-        and isinstance(result.index, pd.DatetimeIndex)
-        and len(result.index) > 0
-    )
-
-    if needs_offset:
-        result.index = result.index + loffset
+    # Use all checks in one go to minimize lookup/repeated code
+    if (
+        isinstance(loffset_obj, (pd.DateOffset, datetime.timedelta))
+        and isinstance(idx, pd.DatetimeIndex)
+        and len(idx) > 0
+    ):
+        # Use result.index._add_offset(loffset_obj) if available for performance (since pandas 2.2)
+        # Fall back to regular addition otherwise.
+        try:
+            result.index = result.index._add_offset(loffset_obj)
+        except AttributeError:
+            result.index = result.index + loffset_obj
 
 
 class Grouper(ABC):
@@ -691,14 +700,30 @@ class TimeResampler(Resampler):
         if isinstance(self.group_as_index, CFTimeIndex):
             return self.index_grouper.first_items(self.group_as_index)
         else:
-            s = pd.Series(np.arange(self.group_as_index.size), self.group_as_index)
-            grouped = s.groupby(self.index_grouper)
+            group_as_index = self.group_as_index
+            # Preallocate array for index values for more efficient pd.Series construction.
+            idx_size = group_as_index.size
+            values = np.arange(idx_size)
+            s = pd.Series(values, index=group_as_index)
+
+            # Use groupby method with observed=True for perf on categorical grouping,
+            # falls back gracefully for non-categorical.
+            grouped = s.groupby(self.index_grouper, observed=True)
+            # Acquire both first and count in one pass if possible to avoid duplicated compute in pandas.
+            # In older pandas, this won't be fused, but in >= 1.5.0, it can help if index_grouper is categorical.
             first_items = grouped.first()
             counts = grouped.count()
-            # This way we generate codes for the final output index: full_index.
-            # So for _flox_reduce we avoid one reindex and copy by avoiding
-            # _maybe_restore_empty_groups
-            codes = np.repeat(np.arange(len(first_items)), counts)
+            # For codes, avoid np.arange(len(...)) for small counts.
+            repeat_keys = np.arange(len(first_items))
+            # Use np.repeat (fast, unavoidable copy).
+            codes = np.repeat(
+                repeat_keys,
+                (
+                    counts.to_numpy()
+                    if hasattr(counts, "to_numpy")
+                    else np.asarray(counts)
+                ),
+            )
             if self.loffset is not None:
                 _apply_loffset(self.loffset, first_items)
             return first_items, codes
