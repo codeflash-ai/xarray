@@ -30,6 +30,10 @@ if TYPE_CHECKING:
     from xarray.core.dataarray import DataArray
     from xarray.core.dataset import Dataset
 
+_interp1d_methods = get_args(Interp1dOptions)
+
+_valid_methods = tuple(vv for v in get_args(InterpOptions) for vv in get_args(v))
+
 
 def _get_nan_block_lengths(
     obj: Dataset | DataArray | Variable, dim: Hashable, index: Variable
@@ -474,35 +478,31 @@ def _get_interpolator(
         type[NumpyInterpolator] | type[ScipyInterpolator] | type[SplineInterpolator]
     )
 
-    interp1d_methods = get_args(Interp1dOptions)
-    valid_methods = tuple(vv for v in get_args(InterpOptions) for vv in get_args(v))
+    # prioritize scipy.interpolate
+    fill_value = kwargs.get("fill_value", None)
 
     # prioritize scipy.interpolate
-    if (
-        method == "linear"
-        and not kwargs.get("fill_value", None) == "extrapolate"
-        and not vectorizeable_only
-    ):
-        kwargs.update(method=method)
+    if method == "linear" and fill_value != "extrapolate" and not vectorizeable_only:
+        kwargs["method"] = method
         interp_class = NumpyInterpolator
 
-    elif method in valid_methods:
-        if method in interp1d_methods:
-            kwargs.update(method=method)
+    elif method in _valid_methods:
+        if method in _interp1d_methods:
+            kwargs["method"] = method
             interp_class = ScipyInterpolator
         elif vectorizeable_only:
             raise ValueError(
                 f"{method} is not a vectorizeable interpolator. "
-                f"Available methods are {interp1d_methods}"
+                f"Available methods are {_interp1d_methods}"
             )
         elif method == "barycentric":
             interp_class = _import_interpolant("BarycentricInterpolator", method)
-        elif method in ["krogh", "krog"]:
+        elif method in ("krogh", "krog"):
             interp_class = _import_interpolant("KroghInterpolator", method)
         elif method == "pchip":
             interp_class = _import_interpolant("PchipInterpolator", method)
         elif method == "spline":
-            kwargs.update(method=method)
+            kwargs["method"] = method
             interp_class = SplineInterpolator
         elif method == "akima":
             interp_class = _import_interpolant("Akima1DInterpolator", method)
