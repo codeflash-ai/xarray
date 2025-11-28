@@ -456,9 +456,9 @@ def bfill(arr, dim=None, limit=None):
 def _import_interpolant(interpolant, method):
     """Import interpolant from scipy.interpolate."""
     try:
-        from scipy import interpolate
+        import scipy.interpolate
 
-        return getattr(interpolate, interpolant)
+        return getattr(scipy.interpolate, interpolant)
     except ImportError as e:
         raise ImportError(f"Interpolation with method {method} requires scipy.") from e
 
