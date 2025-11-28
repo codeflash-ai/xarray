@@ -101,8 +101,7 @@ def get_fill_value(dtype):
     -------
     fill_value : Missing value corresponding to this dtype.
     """
-    _, fill_value = maybe_promote(dtype)
-    return fill_value
+    return _get_fill_value_cached(dtype)
 
 
 def get_pos_infinity(dtype, max_for_int=False):
@@ -193,3 +192,8 @@ def result_type(
             return np.dtype(object)
 
     return np.result_type(*arrays_and_dtypes)
+
+@functools.lru_cache(maxsize=128)
+def _get_fill_value_cached(dtype):
+    _, fill_value = maybe_promote(dtype)
+    return fill_value
