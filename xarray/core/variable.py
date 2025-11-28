@@ -2768,7 +2768,10 @@ class IndexVariable(Variable):
             return False
 
     def _data_equals(self, other):
-        return self._to_index().equals(other._to_index())
+        try:
+            return self._data.array.equals(other._data.array)
+        except Exception:
+            return self._to_index().equals(other._to_index())
 
     def to_index_variable(self) -> IndexVariable:
         """Return this variable as an xarray.IndexVariable"""
@@ -2784,15 +2787,21 @@ class IndexVariable(Variable):
         assert self.ndim == 1
         index = self._data.array
         if isinstance(index, pd.MultiIndex):
-            # set default names for multi-index unnamed levels so that
-            # we can safely rename dimension / coordinate later
-            valid_level_names = [
-                name or f"{self.dims[0]}_level_{i}"
-                for i, name in enumerate(index.names)
-            ]
-            index = index.set_names(valid_level_names)
+            # Set default names for multi-index unnamed levels so that
+            # we can safely rename dimension / coordinate later.
+            # (Avoids closure/copy in listcomp by using enumerate and tuple)
+            names = index.names
+            if any(name is None for name in names):
+                # Only create new names if needed, else share object
+                valid_level_names = tuple(
+                    name if name is not None else f"{self.dims[0]}_level_{i}"
+                    for i, name in enumerate(names)
+                )
+                # set_names is idempotent if unchanged
+                index = index.set_names(valid_level_names)
         else:
-            index = index.set_names(self.name)
+            if index.name != self.name:
+                index = index.set_names(self.name)
         return index
 
     def to_index(self) -> pd.Index:
