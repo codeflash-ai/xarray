@@ -213,13 +213,20 @@ class SplineInterpolator(BaseInterpolator):
 
 def _apply_over_vars_with_dim(func, self, dim=None, **kwargs):
     """Wrapper for datasets"""
-    ds = type(self)(coords=self.coords, attrs=self.attrs)
+    coords = self.coords
+    attrs = self.attrs
+    data_vars = self.data_vars
 
-    for name, var in self.data_vars.items():
+    # Preallocate dict for data_vars assignment, avoiding repeated setattr/item overhead
+    new_data_vars = {}
+    for name, var in data_vars.items():
         if dim in var.dims:
-            ds[name] = func(var, dim=dim, **kwargs)
+            new_data_vars[name] = func(var, dim=dim, **kwargs)
         else:
-            ds[name] = var
+            new_data_vars[name] = var
+
+    # Construct new dataset in a single step for efficiency
+    ds = type(self)(coords=coords, attrs=attrs, data_vars=new_data_vars)
 
     return ds
 
