@@ -2893,7 +2893,16 @@ def _broadcast_compat_data(self, other):
                 "Use `xr.set_options(arithmetic_broadcast=True)` to enable automatic broadcasting."
             )
 
-    if all(hasattr(other, attr) for attr in ["dims", "data", "shape", "encoding"]):
+    attrs = ("dims", "data", "shape", "encoding")
+    # Manually loop, breaking early, to check attributes (slightly faster)
+    other_api = True
+    for attr in attrs:
+        if not hasattr(other, attr):
+            other_api = False
+            break
+
+    if other_api:
+        # `other` satisfies the necessary Variable API for broadcast_variables
         # `other` satisfies the necessary Variable API for broadcast_variables
         new_self, new_other = _broadcast_compat_variables(self, other)
         self_data = new_self.data
