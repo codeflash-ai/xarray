@@ -391,18 +391,30 @@ def func_interpolate_na(interpolator, y, x, **kwargs):
     # reversed arguments are so that attrs are preserved from da, not index
     # it would be nice if this wasn't necessary, works around:
     # "ValueError: assignment destination is read-only" in assignment below
-    out = y.copy()
+    # reversed arguments are so that attrs are preserved from da, not index
+    # it would be nice if this wasn't necessary, works around:
+    # "ValueError: assignment destination is read-only" in assignment below
 
-    nans = pd.isnull(y)
-    nonans = ~nans
+    # Use numpy for faster mask computation and sum, if input is compatible
+    # This also speeds up pd.isnull due to internal optimizations
+
+    # Fastest path: check for nans (mask, sum) using np.asarray to ensure ndarray
+    y_arr = np.asarray(y)
+    nans = pd.isnull(y_arr)
+    n_nans = np.count_nonzero(nans)
+    total_len = y_arr.shape[0]
 
     # fast track for no-nans, all nan but one, and all-nans cases
-    n_nans = nans.sum()
-    if n_nans == 0 or n_nans >= len(y) - 1:
+    if n_nans == 0 or n_nans >= total_len - 1:
         return y
 
-    f = interpolator(x[nonans], y[nonans], **kwargs)
-    out[nans] = f(x[nans])
+    nonans = ~nans
+    # Copy only if interpolation is needed
+    out = y.copy()
+
+    # Use boolean mask indexing, which is fast in numpy/pandas
+    f = interpolator(x[nonans], y_arr[nonans], **kwargs)
+    out[nans] = f(np.asarray(x)[nans])
     return out
 
 
