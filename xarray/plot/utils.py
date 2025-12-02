@@ -327,47 +327,58 @@ def _infer_xy_labels_3d(
     assert rgb is None or rgb != y
     # Start by detecting and reporting invalid combinations of arguments
     assert darray.ndim == 3
-    not_none = [a for a in (x, y, rgb) if a is not None]
-    if len(set(not_none)) < len(not_none):
-        raise ValueError(
-            "Dimension names must be None or unique strings, but imshow was "
-            f"passed x={x!r}, y={y!r}, and rgb={rgb!r}."
-        )
-    for label in not_none:
-        if label not in darray.dims:
-            raise ValueError(f"{label!r} is not a dimension")
+    dims = darray.dims
 
-    # Then calculate rgb dimension if certain and check validity
-    could_be_color = [
-        label
-        for label in darray.dims
-        if darray[label].size in (3, 4) and label not in (x, y)
-    ]
-    if rgb is None and not could_be_color:
-        raise ValueError(
-            "A 3-dimensional array was passed to imshow(), but there is no "
-            "dimension that could be color.  At least one dimension must be "
-            "of size 3 (RGB) or 4 (RGBA), and not given as x or y."
-        )
-    if rgb is None and len(could_be_color) == 1:
-        rgb = could_be_color[0]
-    if rgb is not None and darray[rgb].size not in (3, 4):
-        raise ValueError(
-            f"Cannot interpret dim {rgb!r} of size {darray[rgb].size} as RGB or RGBA."
-        )
+    # Validate uniqueness and existence of dimensions
+    vals = (x, y, rgb)
+    seen = set()
+    for label in vals:
+        if label is not None:
+            if label in seen:
+                raise ValueError(
+                    "Dimension names must be None or unique strings, but imshow was "
+                    f"passed x={x!r}, y={y!r}, and rgb={rgb!r}."
+                )
+            seen.add(label)
+            if label not in dims:
+                raise ValueError(f"{label!r} is not a dimension")
+
+    # Find eligible color dimension(s)
+    could_be_color = []
+    for label in dims:
+        if label not in (x, y):
+            size = darray[label].size
+            if size == 3 or size == 4:
+                could_be_color.append(label)
 
     # If rgb dimension is still unknown, there must be two or three dimensions
     # in could_be_color.  We therefore warn, and use a heuristic to break ties.
     if rgb is None:
-        assert len(could_be_color) in (2, 3)
-        rgb = could_be_color[-1]
-        warnings.warn(
-            "Several dimensions of this array could be colors.  Xarray "
-            f"will use the last possible dimension ({rgb!r}) to match "
-            "matplotlib.pyplot.imshow.  You can pass names of x, y, "
-            "and/or rgb dimensions to override this guess."
-        )
-    assert rgb is not None
+        if not could_be_color:
+            raise ValueError(
+                "A 3-dimensional array was passed to imshow(), but there is no "
+                "dimension that could be color.  At least one dimension must be "
+                "of size 3 (RGB) or 4 (RGBA), and not given as x or y."
+            )
+        if len(could_be_color) == 1:
+            rgb = could_be_color[0]
+        else:
+            # There must be 2 or 3 possible color dims; warn and pick last (matplotlib default)
+            rgb = could_be_color[-1]
+            warnings.warn(
+                "Several dimensions of this array could be colors.  Xarray "
+                f"will use the last possible dimension ({rgb!r}) to match "
+                "matplotlib.pyplot.imshow.  You can pass names of x, y, "
+                "and/or rgb dimensions to override this guess."
+            )
+    else:
+        rgb_size = darray[rgb].size
+        if rgb_size not in (3, 4):
+            raise ValueError(
+                f"Cannot interpret dim {rgb!r} of size {rgb_size} as RGB or RGBA."
+            )
+
+    # Finally, we pick out the red slice and delegate to the 2D version:
 
     # Finally, we pick out the red slice and delegate to the 2D version:
     return _infer_xy_labels(darray.isel({rgb: 0}), x, y)
@@ -385,6 +396,8 @@ def _infer_xy_labels(
 
     darray must be a 2 dimensional data array, or 3d for imshow only.
     """
+    dims = darray.dims
+
     if (x is not None) and (x == y):
         raise ValueError("x and y cannot be equal.")
 
@@ -394,18 +407,25 @@ def _infer_xy_labels(
     if x is None and y is None:
         if darray.ndim != 2:
             raise ValueError("DataArray must be 2d")
-        y, x = darray.dims
+        y, x = dims
     elif x is None:
         _assert_valid_xy(darray, y, "y")
-        x = darray.dims[0] if y == darray.dims[1] else darray.dims[1]
+        # Pick first non-y dim as x
+        if y == dims[1]:
+            x = dims[0]
+        else:
+            x = dims[1]
     elif y is None:
         _assert_valid_xy(darray, x, "x")
-        y = darray.dims[0] if x == darray.dims[1] else darray.dims[1]
+        if x == dims[1]:
+            y = dims[0]
+        else:
+            y = dims[1]
     else:
         _assert_valid_xy(darray, x, "x")
         _assert_valid_xy(darray, y, "y")
-
-        if darray._indexes.get(x, 1) is darray._indexes.get(y, 2):
+        # Use is instead of == to check if both are referencing the same object
+        if darray._indexes.get(x) is darray._indexes.get(y):
             if isinstance(darray._indexes[x], PandasMultiIndex):
                 raise ValueError("x and y cannot be levels of the same MultiIndex")
 
