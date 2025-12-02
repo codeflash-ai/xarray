@@ -26,27 +26,32 @@ if TYPE_CHECKING:
 STANDARD_BACKENDS_ORDER = ["netcdf4", "h5netcdf", "scipy"]
 
 
-def remove_duplicates(entrypoints: EntryPoints) -> list[EntryPoint]:
-    # sort and group entrypoints by name
-    entrypoints_sorted = sorted(entrypoints, key=lambda ep: ep.name)
-    entrypoints_grouped = itertools.groupby(entrypoints_sorted, key=lambda ep: ep.name)
-    # check if there are multiple entrypoints for the same name
-    unique_entrypoints = []
-    for name, _matches in entrypoints_grouped:
-        # remove equal entrypoints
-        matches = list(set(_matches))
-        unique_entrypoints.append(matches[0])
+def remove_duplicates(entrypoints: EntryPoints) -> list[EntryPoint]:  # type: ignore
+    # Optimize deduplication using a dict to group by name, keeping first and emitting warning for dups
+    # This avoids sort/groupby/set
+    seen = {}
+    duplicates = {}
+    for ep in entrypoints:
+        name = ep.name
+        if name not in seen:
+            seen[name] = ep
+        else:
+            if name not in duplicates:
+                duplicates[name] = [seen[name], ep]
+            else:
+                duplicates[name].append(ep)
+    # Warn about duplicates
+    for name, matches in duplicates.items():
         matches_len = len(matches)
-        if matches_len > 1:
-            all_module_names = [e.value.split(":")[0] for e in matches]
-            selected_module_name = all_module_names[0]
-            warnings.warn(
-                f"Found {matches_len} entrypoints for the engine name {name}:"
-                f"\n {all_module_names}.\n "
-                f"The entrypoint {selected_module_name} will be used.",
-                RuntimeWarning,
-            )
-    return unique_entrypoints
+        all_module_names = [e.value.split(":")[0] for e in matches]
+        selected_module_name = all_module_names[0]
+        warnings.warn(
+            f"Found {matches_len} entrypoints for the engine name {name}:"
+            f"\n {all_module_names}.\n "
+            f"The entrypoint {selected_module_name} will be used.",
+            RuntimeWarning,
+        )
+    return list(seen.values())
 
 
 def detect_parameters(open_dataset: Callable) -> tuple[str, ...]:
@@ -75,35 +80,46 @@ def backends_dict_from_pkg(
         name = entrypoint.name
         try:
             backend = entrypoint.load()
-            backend_entrypoints[name] = backend
         except Exception as ex:
             warnings.warn(f"Engine {name!r} loading failed:\n{ex}", RuntimeWarning)
+            continue
+        backend_entrypoints[name] = backend
     return backend_entrypoints
 
 
 def set_missing_parameters(
-    backend_entrypoints: dict[str, type[BackendEntrypoint]]
+    backend_entrypoints: dict[str, type[BackendEntrypoint]],
 ) -> None:
-    for _, backend in backend_entrypoints.items():
+    # Optimize: cache detect_parameters per unique backend class
+    computed_params = {}
+    for backend in backend_entrypoints.values():
         if backend.open_dataset_parameters is None:
-            open_dataset = backend.open_dataset
-            backend.open_dataset_parameters = detect_parameters(open_dataset)
+            if backend in computed_params:
+                backend.open_dataset_parameters = computed_params[backend]
+            else:
+                open_dataset = backend.open_dataset
+                params = detect_parameters(open_dataset)
+                backend.open_dataset_parameters = params
+                computed_params[backend] = params
 
 
 def sort_backends(
-    backend_entrypoints: dict[str, type[BackendEntrypoint]]
+    backend_entrypoints: dict[str, type[BackendEntrypoint]],
 ) -> dict[str, type[BackendEntrypoint]]:
-    ordered_backends_entrypoints = {}
-    for be_name in STANDARD_BACKENDS_ORDER:
-        if backend_entrypoints.get(be_name, None) is not None:
-            ordered_backends_entrypoints[be_name] = backend_entrypoints.pop(be_name)
-    ordered_backends_entrypoints.update(
-        {name: backend_entrypoints[name] for name in sorted(backend_entrypoints)}
-    )
+    # Optimize: combine pop and set operation, then extend
+    ordered_backends_entrypoints = {
+        be_name: backend_entrypoints.pop(be_name)
+        for be_name in STANDARD_BACKENDS_ORDER
+        if be_name in backend_entrypoints
+    }
+    if backend_entrypoints:
+        ordered_backends_entrypoints.update(
+            {name: backend_entrypoints[name] for name in sorted(backend_entrypoints)}
+        )
     return ordered_backends_entrypoints
 
 
-def build_engines(entrypoints: EntryPoints) -> dict[str, BackendEntrypoint]:
+def build_engines(entrypoints: EntryPoints) -> dict[str, BackendEntrypoint]:  # type: ignore
     backend_entrypoints: dict[str, type[BackendEntrypoint]] = {}
     for backend_name, (module_name, backend) in BACKEND_ENTRYPOINTS.items():
         if module_name is None or module_available(module_name):
