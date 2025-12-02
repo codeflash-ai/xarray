@@ -16,6 +16,8 @@ from xarray.core.options import OPTIONS
 from xarray.core.utils import is_scalar, module_available
 from xarray.namedarray.pycompat import DuckArrayModule
 
+_pint_array_type = None
+
 nc_time_axis_available = module_available("nc_time_axis")
 
 
@@ -499,9 +501,8 @@ def _maybe_gca(**subplot_kws: Any) -> Axes:
 
 def _get_units_from_attrs(da: DataArray) -> str:
     """Extracts and formats the unit/units from a attributes."""
-    pint_array_type = DuckArrayModule("pint").type
     units = " [{}]"
-    if isinstance(da.data, pint_array_type):
+    if _pint_array_type is not None and isinstance(da.data, _pint_array_type):
         return units.format(str(da.data.units))
     if "units" in da.attrs:
         return units.format(da.attrs["units"])
