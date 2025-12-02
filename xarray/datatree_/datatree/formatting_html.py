@@ -19,9 +19,11 @@ def summarize_children(children: Mapping[str, Any]) -> str:
     lines_callback = lambda n, c, end: _wrap_repr(node_repr(n, c), end=end)
 
     children_html = "".join(
-        lines_callback(n, c, end=False)  # Long lines
-        if i < N_CHILDREN
-        else lines_callback(n, c, end=True)  # Short lines
+        (
+            lines_callback(n, c, end=False)  # Long lines
+            if i < N_CHILDREN
+            else lines_callback(n, c, end=True)
+        )  # Short lines
         for i, (n, c) in enumerate(children.items())
     )
 
@@ -98,35 +100,35 @@ def _wrap_repr(r: str, end: bool = False) -> str:
     """
     # height of line
     end = bool(end)
-    height = "100%" if end is False else "1.2em"
-    return "".join(
-        [
-            "<div style='display: inline-grid;'>",
-            "<div style='",
-            "grid-column-start: 1;",
-            "border-right: 0.2em solid;",
-            "border-color: var(--xr-border-color);",
-            f"height: {height};",
-            "width: 0px;",
-            "'>",
-            "</div>",
-            "<div style='",
-            "grid-column-start: 2;",
-            "grid-row-start: 1;",
-            "height: 1em;",
-            "width: 20px;",
-            "border-bottom: 0.2em solid;",
-            "border-color: var(--xr-border-color);",
-            "'>",
-            "</div>",
-            "<div style='",
-            "grid-column-start: 3;",
-            "'>",
-            "<ul class='xr-sections'>",
-            r,
-            "</ul>" "</div>",
-            "</div>",
-        ]
+    height = "100%" if not end else "1.2em"
+
+    # Pre-build all literal HTML lines into one template string for much faster joining
+    return (
+        "<div style='display: inline-grid;'>"
+        "<div style='"
+        "grid-column-start: 1;"
+        "border-right: 0.2em solid;"
+        "border-color: var(--xr-border-color);"
+        f"height: {height};"
+        "width: 0px;"
+        "'>"
+        "</div>"
+        "<div style='"
+        "grid-column-start: 2;"
+        "grid-row-start: 1;"
+        "height: 1em;"
+        "width: 20px;"
+        "border-bottom: 0.2em solid;"
+        "border-color: var(--xr-border-color);"
+        "'>"
+        "</div>"
+        "<div style='"
+        "grid-column-start: 3;"
+        "'>"
+        "<ul class='xr-sections'>"
+        f"{r}"
+        "</ul></div>"
+        "</div>"
     )
 
 
