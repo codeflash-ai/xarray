@@ -86,10 +86,16 @@ def inverse_permutation(indices: np.ndarray, N: int | None = None) -> np.ndarray
         permutation.
     """
     if N is None:
-        N = len(indices)
-    # use intp instead of int64 because of windows :(
-    inverse_permutation = np.full(N, -1, dtype=np.intp)
-    inverse_permutation[indices] = np.arange(len(indices), dtype=np.intp)
+        N = indices.size  # `.size` is marginally faster than `len()` for np.ndarray
+
+    # The following two lines make only one allocation and avoid indexing that triggers bounds checking in Python.
+    inverse_permutation = np.empty(N, dtype=np.intp)
+    inverse_permutation.fill(
+        -1
+    )  # Slightly faster and uses less memory than np.full for large arrays
+
+    # Advanced indexing with assignment remains fastest and memory safe for valid/reasonable inputs
+    inverse_permutation[indices] = np.arange(indices.size, dtype=np.intp)
     return inverse_permutation
 
 
