@@ -1,5 +1,4 @@
-"""Functions for converting to and from xarray objects
-"""
+"""Functions for converting to and from xarray objects"""
 
 from collections import Counter
 
@@ -120,13 +119,27 @@ def to_iris(dataarray):
 
 def _iris_obj_to_attrs(obj):
     """Return a dictionary of attrs when given a Iris object"""
-    attrs = {"standard_name": obj.standard_name, "long_name": obj.long_name}
-    if obj.units.calendar:
-        attrs["calendar"] = obj.units.calendar
-    if obj.units.origin != "1" and not obj.units.is_unknown():
-        attrs["units"] = obj.units.origin
-    attrs.update(obj.attributes)
-    return {k: v for k, v in attrs.items() if v is not None}
+    # Build attrs dict with only present values to avoid Nones
+    attrs = {}
+    standard_name = obj.standard_name
+    if standard_name is not None:
+        attrs["standard_name"] = standard_name
+    long_name = obj.long_name
+    if long_name is not None:
+        attrs["long_name"] = long_name
+    units = obj.units
+    calendar = units.calendar
+    if calendar:
+        attrs["calendar"] = calendar
+    # Only add "units" if origin != "1" and is not unknown
+    origin = units.origin
+    if origin != "1" and not units.is_unknown():
+        attrs["units"] = origin
+    # Update with user attributes, omitting None values for speed/memory
+    for k, v in obj.attributes.items():
+        if v is not None:
+            attrs[k] = v
+    return attrs
 
 
 def _iris_cell_methods_to_str(cell_methods_obj):
