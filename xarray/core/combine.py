@@ -13,6 +13,7 @@ from xarray.core.dataarray import DataArray
 from xarray.core.dataset import Dataset
 from xarray.core.merge import merge
 from xarray.core.utils import iterate_nested
+import numpy as np
 
 if TYPE_CHECKING:
     from xarray.core.types import CombineAttrsOptions, CompatOptions, JoinOptions
@@ -79,7 +80,9 @@ def _ensure_same_types(series, dim):
 
 def _infer_concat_order_from_coords(datasets):
     concat_dims = []
-    tile_ids = [() for ds in datasets]
+    tile_ids = [() for _ in datasets]
+
+    # All datasets have same variables because they've been grouped as such
 
     # All datasets have same variables because they've been grouped as such
     ds0 = datasets[0]
@@ -95,17 +98,21 @@ def _infer_concat_order_from_coords(datasets):
                 )
 
             # TODO (benbovy, flexible indexes): support flexible indexes?
-            indexes = [index.to_pandas_index() for index in indexes]
+            pandas_indexes = [index.to_pandas_index() for index in indexes]
 
             # If dimension coordinate values are same on every dataset then
             # should be leaving this dimension alone (it's just a "bystander")
-            if not all(index.equals(indexes[0]) for index in indexes[1:]):
+            ref_index = pandas_indexes[0]
+            if not all(index.equals(ref_index) for index in pandas_indexes[1:]):
+                # Infer order datasets should be arranged in along this dim
                 # Infer order datasets should be arranged in along this dim
                 concat_dims.append(dim)
 
-                if all(index.is_monotonic_increasing for index in indexes):
+                is_incr = [index.is_monotonic_increasing for index in pandas_indexes]
+                is_decr = [index.is_monotonic_decreasing for index in pandas_indexes]
+                if all(is_incr):
                     ascending = True
-                elif all(index.is_monotonic_decreasing for index in indexes):
+                elif all(is_decr):
                     ascending = False
                 else:
                     raise ValueError(
@@ -114,31 +121,45 @@ def _infer_concat_order_from_coords(datasets):
                         "monotonically decreasing on all datasets"
                     )
 
-                # Assume that any two datasets whose coord along dim starts
-                # with the same value have the same coord values throughout.
-                if any(index.size == 0 for index in indexes):
+                if any(index.size == 0 for index in pandas_indexes):
                     raise ValueError("Cannot handle size zero dimensions")
-                first_items = pd.Index([index[0] for index in indexes])
 
-                series = first_items.to_series()
+                # This is a hot path: avoid pandas Index->Series->rank when possible
+                # Create a numpy array of first items for vectorized ranking
+                first_items = np.array(
+                    [index[0] for index in pandas_indexes], dtype=object
+                )
+
+                # ensure series does not contain mixed types, e.g. cftime calendars
+                # keep code behavior: .to_series() passes index values as pd.Series
+                # So, mimic as pandas.Series for _ensure_same_types
+                # Optimization: don't create Index+to_series if not needed elsewhere
+                series = pd.Series(first_items)
 
                 # ensure series does not contain mixed types, e.g. cftime calendars
                 _ensure_same_types(series, dim)
 
-                # Sort datasets along dim
-                # We want rank but with identical elements given identical
-                # position indices - they should be concatenated along another
-                # dimension, not along this one
-                rank = series.rank(
-                    method="dense", ascending=ascending, numeric_only=False
+                # Optimized dense ranking (assign consecutive integers, starting at 0, same values same number)
+                # Equivalent to pandas.Series.rank(method="dense", ...).astype(int) - 1
+                # This is much faster and removes pandas overhead.
+                unique, inverse = np.unique(
+                    first_items if ascending else first_items[::-1], return_inverse=True
                 )
-                order = rank.astype(int).values - 1
-
-                # Append positions along extra dimension to structure which
-                # encodes the multi-dimensional concatenation order
-                tile_ids = [
-                    tile_id + (position,) for tile_id, position in zip(tile_ids, order)
-                ]
+                if ascending:
+                    # inverse gives position in unique array; unique is sorted ascending
+                    order = inverse
+                else:
+                    # To keep original output, if descending, need to reverse order
+                    order = inverse
+                # Previous logic with pandas rank: dense, consecutive integers starting at 0, same values same number
+                # If unique count is less than n, need to ensure order is based on group
+                # Since the tile_ids update is zip(tile_ids, order), must match order
+                # If not ascending, the unique array is reversed, so invert values accordingly
+                if not ascending:
+                    order = (len(unique) - 1) - order
+                # order is a np.ndarray of shape (len(datasets),) with dtype int
+                # Now efficiently update tile_ids
+                tile_ids = [tile_id + (pos,) for tile_id, pos in zip(tile_ids, order)]
 
     if len(datasets) > 1 and not concat_dims:
         raise ValueError(
