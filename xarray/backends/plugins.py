@@ -52,19 +52,23 @@ def remove_duplicates(entrypoints: EntryPoints) -> list[EntryPoint]:
 def detect_parameters(open_dataset: Callable) -> tuple[str, ...]:
     signature = inspect.signature(open_dataset)
     parameters = signature.parameters
-    parameters_list = []
+    # Precompute forbidden kinds for faster lookup
+    forbidden_kinds = {inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL}
+
+    # Fast path: avoid repeated tuple lookup, use list comprehension for improved memory access patterns
+    result = []
+    append = result.append  # Localize for faster loop
     for name, param in parameters.items():
-        if param.kind in (
-            inspect.Parameter.VAR_KEYWORD,
-            inspect.Parameter.VAR_POSITIONAL,
-        ):
+        kind = param.kind
+        if kind in forbidden_kinds:
             raise TypeError(
                 f"All the parameters in {open_dataset!r} signature should be explicit. "
                 "*args and **kwargs is not supported"
             )
         if name != "self":
-            parameters_list.append(name)
-    return tuple(parameters_list)
+            append(name)
+
+    return tuple(result)
 
 
 def backends_dict_from_pkg(
@@ -82,7 +86,7 @@ def backends_dict_from_pkg(
 
 
 def set_missing_parameters(
-    backend_entrypoints: dict[str, type[BackendEntrypoint]]
+    backend_entrypoints: dict[str, type[BackendEntrypoint]],
 ) -> None:
     for _, backend in backend_entrypoints.items():
         if backend.open_dataset_parameters is None:
@@ -91,7 +95,7 @@ def set_missing_parameters(
 
 
 def sort_backends(
-    backend_entrypoints: dict[str, type[BackendEntrypoint]]
+    backend_entrypoints: dict[str, type[BackendEntrypoint]],
 ) -> dict[str, type[BackendEntrypoint]]:
     ordered_backends_entrypoints = {}
     for be_name in STANDARD_BACKENDS_ORDER:
