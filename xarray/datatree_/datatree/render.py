@@ -171,7 +171,17 @@ class RenderTree(object):
         self.maxlevel = maxlevel
 
     def __iter__(self):
-        return self.__next(self.node, tuple())
+        stack = [(self.node, tuple(), 0)]
+        while stack:
+            curr_node, continues, level = stack.pop()
+            yield RenderTree.__item(curr_node, continues, self.style)
+            children = tuple(curr_node.children.values())
+            level += 1
+            if children and (self.maxlevel is None or level < self.maxlevel):
+                children = self.childiter(children)
+                is_last_results = list(_is_last(children))
+                for child, is_last in reversed(is_last_results):
+                    stack.append((child, continues + (not is_last,), level))
 
     def __next(self, node, continues, level=0):
         yield RenderTree.__item(node, continues, self.style)
