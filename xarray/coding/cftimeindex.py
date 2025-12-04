@@ -188,7 +188,11 @@ def _parsed_string_to_bounds(date_type, resolution, parsed):
 
 def get_date_field(datetimes, field):
     """Adapted from pandas.tslib.get_date_field"""
-    return np.array([getattr(date, field) for date in datetimes], dtype=np.int64)
+    return np.fromiter(
+        (getattr(date, field) for date in datetimes),
+        dtype=np.int64,
+        count=len(datetimes),
+    )
 
 
 def _field_accessor(name, docstring=None, min_cftime_version="0.0"):
