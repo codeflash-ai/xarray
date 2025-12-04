@@ -108,15 +108,15 @@ def build_pattern(date_sep=r"\-", datetime_sep=r"T", time_sep=r"\:"):
     return "^" + trailing_optional(pattern_list) + "$"
 
 
-_BASIC_PATTERN = build_pattern(date_sep="", time_sep="")
-_EXTENDED_PATTERN = build_pattern()
-_CFTIME_PATTERN = build_pattern(datetime_sep=" ")
+_BASIC_PATTERN = re.compile(build_pattern(date_sep="", time_sep=""))
+_EXTENDED_PATTERN = re.compile(build_pattern())
+_CFTIME_PATTERN = re.compile(build_pattern(datetime_sep=" "))
 _PATTERNS = [_BASIC_PATTERN, _EXTENDED_PATTERN, _CFTIME_PATTERN]
 
 
 def parse_iso8601_like(datetime_string):
     for pattern in _PATTERNS:
-        match = re.match(pattern, datetime_string)
+        match = pattern.match(datetime_string)
         if match:
             return match.groupdict()
     raise ValueError(
