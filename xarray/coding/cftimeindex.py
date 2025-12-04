@@ -79,7 +79,7 @@ except AttributeError:
 
 
 def named(name, pattern):
-    return "(?P<" + name + ">" + pattern + ")"
+    return f"(?P<{name}>{pattern})"
 
 
 def optional(x):
