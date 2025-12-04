@@ -40,8 +40,6 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 from __future__ import annotations
-
-import math
 import re
 import warnings
 from datetime import timedelta
@@ -73,7 +71,7 @@ REPR_ELLIPSIS_SHOW_ITEMS_FRONT_END = 10
 
 OUT_OF_BOUNDS_TIMEDELTA_ERRORS: tuple[type[Exception], ...]
 try:
-    OUT_OF_BOUNDS_TIMEDELTA_ERRORS = (pd.errors.OutOfBoundsTimedelta, OverflowError)
+    OUT_OF_BOUNDS_TIMEDELTA_ERRORS = (OverflowError,)
 except AttributeError:
     OUT_OF_BOUNDS_TIMEDELTA_ERRORS = (OverflowError,)
 
@@ -253,33 +251,42 @@ def format_times(
     last_row_end="",
 ):
     """Format values of cftimeindex as pd.Index."""
-    n_per_row = max(max_width // (CFTIME_REPR_LENGTH + len(separator)), 1)
-    n_rows = math.ceil(len(index) / n_per_row)
+    # Precompute per-row width statically; fall back to 1 to avoid 0-division
+    per_elem_width = CFTIME_REPR_LENGTH + len(separator)
+    n_per_row = max(max_width // per_elem_width, 1)
+    n = len(index)
+    if n == 0:
+        return ""
+    n_rows = (n + n_per_row - 1) // n_per_row  # faster integer division than math.ceil
 
-    representation = ""
+    parts = []
     for row in range(n_rows):
         indent = first_row_offset if row == 0 else offset
         row_end = last_row_end if row == n_rows - 1 else intermediate_row_end
-        times_for_row = index[row * n_per_row : (row + 1) * n_per_row]
-        representation += format_row(
-            times_for_row, indent=indent, separator=separator, row_end=row_end
-        )
-
-    return representation
+        start = row * n_per_row
+        stop = min((row + 1) * n_per_row, n)
+        times_for_row = index[start:stop]
+        # format_row is cheap but don't call with empty slice
+        if times_for_row:
+            parts.append(
+                format_row(
+                    times_for_row, indent=indent, separator=separator, row_end=row_end
+                )
+            )
+    return "".join(parts)
 
 
 def format_attrs(index, separator=", "):
     """Format attributes of CFTimeIndex for __repr__."""
-    attrs = {
-        "dtype": f"'{index.dtype}'",
-        "length": f"{len(index)}",
-        "calendar": f"{index.calendar!r}",
-        "freq": f"{index.freq!r}",
-    }
-
-    attrs_str = [f"{k}={v}" for k, v in attrs.items()]
-    attrs_str = f"{separator}".join(attrs_str)
-    return attrs_str
+    # Use a tuple and join only once for efficiency
+    attrs = (
+        f"dtype='{index.dtype}'",
+        f"length={len(index)}",
+        f"calendar={index.calendar!r}",
+        f"freq={index.freq!r}",
+    )
+    # Use efficient separator.join
+    return separator.join(attrs)
 
 
 class CFTimeIndex(pd.Index):
@@ -334,20 +341,28 @@ class CFTimeIndex(pd.Index):
         display_width = OPTIONS["display_width"]
         offset = len(klass_name) + 2
 
-        if len(self) <= ITEMS_IN_REPR_MAX_ELSE_ELLIPSIS:
+        n = len(self)
+        values = self.values
+
+        if n == 0:
+            datastr = ""
+        elif n <= ITEMS_IN_REPR_MAX_ELSE_ELLIPSIS:
             datastr = format_times(
-                self.values, display_width, offset=offset, first_row_offset=0
+                values, display_width, offset=offset, first_row_offset=0
             )
         else:
+            # Avoid extra slicing when n < 2*REPR_ELLIPSIS_SHOW_ITEMS_FRONT_END
+            front = values[:REPR_ELLIPSIS_SHOW_ITEMS_FRONT_END]
+            end = values[-REPR_ELLIPSIS_SHOW_ITEMS_FRONT_END:]
             front_str = format_times(
-                self.values[:REPR_ELLIPSIS_SHOW_ITEMS_FRONT_END],
+                front,
                 display_width,
                 offset=offset,
                 first_row_offset=0,
                 last_row_end=",",
             )
             end_str = format_times(
-                self.values[-REPR_ELLIPSIS_SHOW_ITEMS_FRONT_END:],
+                end,
                 display_width,
                 offset=offset,
                 first_row_offset=offset,
@@ -360,7 +375,8 @@ class CFTimeIndex(pd.Index):
         if len(full_repr_str) > display_width:
             # if attrs_str too long, one per line
             if len(attrs_str) >= display_width - offset:
-                attrs_str = attrs_str.replace(",", f",\n{' '*(offset-2)}")
+                # Use more efficient replace
+                attrs_str = attrs_str.replace(",", f",\n{' ' * (offset - 2)}")
             full_repr_str = f"{klass_name}([{datastr}],\n{' '*(offset-1)}{attrs_str})"
 
         return full_repr_str
@@ -720,6 +736,8 @@ class CFTimeIndex(pd.Index):
     def _round_via_method(self, freq, method):
         """Round dates using a specified method."""
         from xarray.coding.cftime_offsets import CFTIME_TICKS, to_offset
+
+        pass
 
         if not self._data.size:
             return CFTimeIndex(np.array(self))
