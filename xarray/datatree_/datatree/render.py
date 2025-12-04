@@ -234,23 +234,23 @@ class RenderTree(object):
             └── sub1C
                 └── sub1Ca
         """
-
-        def get():
-            for pre, fill, node in self:
-                attr = (
-                    attrname(node)
-                    if callable(attrname)
-                    else getattr(node, attrname, "")
-                )
-                if isinstance(attr, (list, tuple)):
-                    lines = attr
-                else:
-                    lines = str(attr).split("\n")
-                yield "%s%s" % (pre, lines[0])
-                for line in lines[1:]:
-                    yield "%s%s" % (fill, line)
-
-        return "\n".join(get())
+        # In-place generator reduces function call overhead vs nested function
+        lines = []
+        append = lines.append
+        callable_attr = callable(attrname)
+        for pre, fill, node in self:
+            if callable_attr:
+                attr = attrname(node)
+            else:
+                attr = getattr(node, attrname, "")
+            if isinstance(attr, (list, tuple)):
+                arr_lines = attr
+            else:
+                arr_lines = str(attr).split("\n")
+            append("%s%s" % (pre, arr_lines[0]))
+            for line in arr_lines[1:]:
+                append("%s%s" % (fill, line))
+        return "\n".join(lines)
 
 
 def _is_last(iterable):
