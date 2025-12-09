@@ -393,7 +393,8 @@ class Variable(NamedArray, AbstractArray, VariableArithmetic):
         data=_default,
         attrs=_default,
     ):
-        dims_ = copy.copy(self._dims) if dims is _default else dims
+        # Avoid unnecessary copies if possible
+        dims_ = self._dims if dims is _default else dims
 
         if attrs is _default:
             attrs_ = None if self._attrs is None else self._attrs.copy()
@@ -401,7 +402,8 @@ class Variable(NamedArray, AbstractArray, VariableArithmetic):
             attrs_ = attrs
 
         if data is _default:
-            return type(self)(dims_, copy.copy(self._data), attrs_)
+            # Only copy data if caller does not supply data, avoid copy if possible
+            return type(self)(dims_, self._data, attrs_)
         else:
             cls_ = type(self)
             return cls_(dims_, data, attrs_)
