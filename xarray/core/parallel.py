@@ -106,9 +106,13 @@ def make_meta(obj):
     from dask.array.utils import meta_from_array
 
     meta = Dataset()
-    for name, variable in obj.variables.items():
+    variables_items = obj.variables.items()
+    meta_vars = []
+    for name, variable in variables_items:
         meta_obj = meta_from_array(variable.data, ndim=variable.ndim)
-        meta[name] = (variable.dims, meta_obj, variable.attrs)
+        meta_vars.append((name, (variable.dims, meta_obj, variable.attrs)))
+    if meta_vars:
+        meta.update(dict(meta_vars))
     meta.attrs = obj.attrs
     meta = meta.set_coords(obj.coords)
 

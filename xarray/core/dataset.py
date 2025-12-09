@@ -8,122 +8,77 @@ import math
 import sys
 import warnings
 from collections import defaultdict
-from collections.abc import (
-    Collection,
-    Hashable,
-    Iterable,
-    Iterator,
-    Mapping,
-    MutableMapping,
-    Sequence,
-)
+from collections.abc import (Collection, Hashable, Iterable, Iterator, Mapping,
+                             MutableMapping, Sequence)
 from html import escape
 from numbers import Number
 from operator import methodcaller
 from os import PathLike
-from typing import IO, TYPE_CHECKING, Any, Callable, Generic, Literal, cast, overload
+from typing import (IO, TYPE_CHECKING, Any, Callable, Generic, Literal, cast,
+                    overload)
 
 import numpy as np
-
-# remove once numpy 2.0 is the oldest supported version
-try:
-    from numpy.exceptions import RankWarning  # type: ignore[attr-defined,unused-ignore]
-except ImportError:
-    from numpy import RankWarning
-
 import pandas as pd
+from line_profiler import profile as codeflash_line_profile
+
+codeflash_line_profile.enable(output_prefix='/tmp/codeflash_hyrdbv3n/baseline_lprof')
 
 from xarray.coding.calendar_ops import convert_calendar, interp_calendar
-from xarray.coding.cftimeindex import CFTimeIndex, _parse_array_of_cftime_strings
-from xarray.core import (
-    alignment,
-    duck_array_ops,
-    formatting,
-    formatting_html,
-    ops,
-    utils,
-)
+from xarray.coding.cftimeindex import (CFTimeIndex,
+                                       _parse_array_of_cftime_strings)
+from xarray.core import alignment
 from xarray.core import dtypes as xrdtypes
+from xarray.core import duck_array_ops, formatting, formatting_html, ops, utils
 from xarray.core._aggregations import DatasetAggregations
-from xarray.core.alignment import (
-    _broadcast_helper,
-    _get_broadcast_dims_map_common_coords,
-    align,
-)
+from xarray.core.alignment import (_broadcast_helper,
+                                   _get_broadcast_dims_map_common_coords,
+                                   align)
 from xarray.core.arithmetic import DatasetArithmetic
-from xarray.core.common import (
-    DataWithCoords,
-    _contains_datetime_like_objects,
-    get_chunksizes,
-)
+from xarray.core.common import (DataWithCoords,
+                                _contains_datetime_like_objects,
+                                get_chunksizes)
 from xarray.core.computation import unify_chunks
-from xarray.core.coordinates import (
-    Coordinates,
-    DatasetCoordinates,
-    assert_coordinate_consistent,
-    create_coords_with_default_indexes,
-)
+from xarray.core.coordinates import (Coordinates, DatasetCoordinates,
+                                     assert_coordinate_consistent,
+                                     create_coords_with_default_indexes)
 from xarray.core.duck_array_ops import datetime_to_numeric
-from xarray.core.indexes import (
-    Index,
-    Indexes,
-    PandasIndex,
-    PandasMultiIndex,
-    assert_no_index_corrupted,
-    create_default_index_implicit,
-    filter_indexes_from_coords,
-    isel_indexes,
-    remove_unused_levels_categories,
-    roll_indexes,
-)
+from xarray.core.indexes import (Index, Indexes, PandasIndex, PandasMultiIndex,
+                                 assert_no_index_corrupted,
+                                 create_default_index_implicit,
+                                 filter_indexes_from_coords, isel_indexes,
+                                 remove_unused_levels_categories, roll_indexes)
 from xarray.core.indexing import is_fancy_indexer, map_index_queries
-from xarray.core.merge import (
-    dataset_merge_method,
-    dataset_update_method,
-    merge_coordinates_without_align,
-    merge_core,
-)
+from xarray.core.merge import (dataset_merge_method, dataset_update_method,
+                               merge_coordinates_without_align, merge_core)
 from xarray.core.missing import get_clean_interp_index
 from xarray.core.options import OPTIONS, _get_keep_attrs
-from xarray.core.types import (
-    QuantileMethods,
-    Self,
-    T_ChunkDim,
-    T_Chunks,
-    T_DataArray,
-    T_DataArrayOrSet,
-    T_Dataset,
-    ZarrWriteModes,
-)
-from xarray.core.utils import (
-    Default,
-    Frozen,
-    FrozenMappingWarningOnValuesAccess,
-    HybridMappingProxy,
-    OrderedSet,
-    _default,
-    decode_numpy_dict_values,
-    drop_dims_from_indexers,
-    either_dict_or_kwargs,
-    emit_user_level_warning,
-    infix_dims,
-    is_dict_like,
-    is_duck_array,
-    is_duck_dask_array,
-    is_scalar,
-    maybe_wrap_array,
-)
-from xarray.core.variable import (
-    IndexVariable,
-    Variable,
-    as_variable,
-    broadcast_variables,
-    calculate_dimensions,
-)
-from xarray.namedarray.parallelcompat import get_chunked_array_type, guess_chunkmanager
+from xarray.core.types import (QuantileMethods, Self, T_ChunkDim, T_Chunks,
+                               T_DataArray, T_DataArrayOrSet, T_Dataset,
+                               ZarrWriteModes)
+from xarray.core.utils import (Default, Frozen,
+                               FrozenMappingWarningOnValuesAccess,
+                               HybridMappingProxy, OrderedSet, _default,
+                               decode_numpy_dict_values,
+                               drop_dims_from_indexers, either_dict_or_kwargs,
+                               emit_user_level_warning, infix_dims,
+                               is_dict_like, is_duck_array, is_duck_dask_array,
+                               is_scalar, maybe_wrap_array)
+from xarray.core.variable import (IndexVariable, Variable, as_variable,
+                                  broadcast_variables, calculate_dimensions)
+from xarray.namedarray.parallelcompat import (get_chunked_array_type,
+                                              guess_chunkmanager)
 from xarray.namedarray.pycompat import array_type, is_chunked_array
 from xarray.plot.accessor import DatasetPlotAccessor
 from xarray.util.deprecation_helpers import _deprecate_positional_args
+
+# remove once numpy 2.0 is the oldest supported version
+try:
+    from numpy.exceptions import \
+        RankWarning  # type: ignore[attr-defined,unused-ignore]
+except ImportError:
+    from numpy import RankWarning
+
+
 
 if TYPE_CHECKING:
     from dask.dataframe import DataFrame as DaskDataFrame
@@ -134,31 +89,19 @@ if TYPE_CHECKING:
     from xarray.backends.api import T_NetcdfEngine, T_NetcdfTypes
     from xarray.core.dataarray import DataArray
     from xarray.core.groupby import DatasetGroupBy
-    from xarray.core.merge import CoercibleMapping, CoercibleValue, _MergeResult
+    from xarray.core.merge import (CoercibleMapping, CoercibleValue,
+                                   _MergeResult)
     from xarray.core.resample import DatasetResample
     from xarray.core.rolling import DatasetCoarsen, DatasetRolling
-    from xarray.core.types import (
-        CFCalendar,
-        CoarsenBoundaryOptions,
-        CombineAttrsOptions,
-        CompatOptions,
-        DataVars,
-        DatetimeLike,
-        DatetimeUnitOptions,
-        Dims,
-        DsCompatible,
-        ErrorOptions,
-        ErrorOptionsWithWarn,
-        InterpOptions,
-        JoinOptions,
-        PadModeOptions,
-        PadReflectOptions,
-        QueryEngineOptions,
-        QueryParserOptions,
-        ReindexMethodOptions,
-        SideOptions,
-        T_Xarray,
-    )
+    from xarray.core.types import (CFCalendar, CoarsenBoundaryOptions,
+                                   CombineAttrsOptions, CompatOptions,
+                                   DataVars, DatetimeLike, DatetimeUnitOptions,
+                                   Dims, DsCompatible, ErrorOptions,
+                                   ErrorOptionsWithWarn, InterpOptions,
+                                   JoinOptions, PadModeOptions,
+                                   PadReflectOptions, QueryEngineOptions,
+                                   QueryParserOptions, ReindexMethodOptions,
+                                   SideOptions, T_Xarray)
     from xarray.core.weighted import DatasetWeighted
     from xarray.namedarray.parallelcompat import ChunkManagerEntrypoint
 
@@ -410,6 +353,7 @@ def _initialize_curvefit_params(params, p0, bounds, func_args):
     return param_defaults, bounds_defaults
 
 
+@codeflash_line_profile
 def merge_data_and_coords(data_vars: DataVars, coords) -> _MergeResult:
     """Used in Dataset.__init__."""
     if isinstance(coords, Coordinates):
@@ -10178,12 +10122,9 @@ class Dataset(
         Dataset.resample
         DataArray.resample
         """
-        from xarray.core.groupby import (
-            DatasetGroupBy,
-            ResolvedGrouper,
-            UniqueGrouper,
-            _validate_groupby_squeeze,
-        )
+        from xarray.core.groupby import (DatasetGroupBy, ResolvedGrouper,
+                                         UniqueGrouper,
+                                         _validate_groupby_squeeze)
 
         _validate_groupby_squeeze(squeeze)
         rgrouper = ResolvedGrouper(UniqueGrouper(), group, self)
@@ -10263,12 +10204,9 @@ class Dataset(
         ----------
         .. [1] http://pandas.pydata.org/pandas-docs/stable/generated/pandas.cut.html
         """
-        from xarray.core.groupby import (
-            BinGrouper,
-            DatasetGroupBy,
-            ResolvedGrouper,
-            _validate_groupby_squeeze,
-        )
+        from xarray.core.groupby import (BinGrouper, DatasetGroupBy,
+                                         ResolvedGrouper,
+                                         _validate_groupby_squeeze)
 
         _validate_groupby_squeeze(squeeze)
         grouper = BinGrouper(
