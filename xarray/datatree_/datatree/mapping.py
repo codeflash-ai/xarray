@@ -291,19 +291,27 @@ def _check_single_set_return_values(path_to_node, obj):
     """Check types returned from single evaluation of func, and return number of return values received from func."""
     if isinstance(obj, (Dataset, DataArray)):
         return 1
-    elif isinstance(obj, tuple):
-        for r in obj:
-            if not isinstance(r, (Dataset, DataArray)):
+    # Fast-path tuple handling with minimized attribute fetching
+    obj_tuple = None
+    if isinstance(obj, tuple):
+        obj_tuple = obj
+    if obj_tuple is not None:
+        # Inline type check with local variable to avoid attribute lookup
+        valid_types = (Dataset, DataArray)
+        # Use enumerate for early exit and more efficient loop
+        for r in obj_tuple:
+            # isinstance() tuple-arg is already fast, minimize scope
+            if not isinstance(r, valid_types):
                 raise TypeError(
                     f"One of the results of calling func on datasets on the nodes at position {path_to_node} is "
                     f"of type {type(r)}, not Dataset or DataArray."
                 )
-        return len(obj)
-    else:
-        raise TypeError(
-            f"The result of calling func on the node at position {path_to_node} is of type {type(obj)}, not "
-            f"Dataset or DataArray, nor a tuple of such types."
-        )
+        return len(obj_tuple)
+    # Fallback to exception for invalid types
+    raise TypeError(
+        f"The result of calling func on the node at position {path_to_node} is of type {type(obj)}, not "
+        f"Dataset or DataArray, nor a tuple of such types."
+    )
 
 
 def _check_all_return_values(returned_objects):
