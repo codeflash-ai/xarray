@@ -1764,11 +1764,19 @@ class Variable(NamedArray, AbstractArray, VariableArithmetic):
         Variables can still be equal (like pandas objects) if they have NaN
         values in the same locations.
         """
+        # Avoid redundant broadcast: only try if dims differ
+        if not hasattr(other, "dims"):
+            return False
+        if self.dims == other.dims:
+            # Fast path: check equality of data
+            return self.equals(other, equiv=equiv)
         try:
-            self, other = broadcast_variables(self, other)
+            from xarray.core.variable import broadcast_variables
+
+            self_broadcasted, other_broadcasted = broadcast_variables(self, other)
         except (ValueError, AttributeError):
             return False
-        return self.equals(other, equiv=equiv)
+        return self_broadcasted.equals(other_broadcasted, equiv=equiv)
 
     def identical(self, other, equiv=duck_array_ops.array_equiv):
         """Like equals, but also checks attributes."""
