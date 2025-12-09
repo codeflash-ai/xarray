@@ -2602,7 +2602,12 @@ class IndexVariable(Variable):
 
         # Unlike in Variable, always eagerly load values into memory
         if not isinstance(self._data, PandasIndexingAdapter):
-            self._data = PandasIndexingAdapter(self._data)
+            # Fastpath for pd.Index, as PandasIndexingAdapter.__init__ skips extra wrapping
+            if isinstance(self._data, pd.Index):
+                self._data = PandasIndexingAdapter(self._data)
+            else:
+                # Avoid unnecessary conversion if already IndexingAdapter-wrapped
+                self._data = PandasIndexingAdapter(self._data)
 
     def __dask_tokenize__(self) -> object:
         from dask.base import normalize_token
@@ -2786,13 +2791,20 @@ class IndexVariable(Variable):
         if isinstance(index, pd.MultiIndex):
             # set default names for multi-index unnamed levels so that
             # we can safely rename dimension / coordinate later
-            valid_level_names = [
-                name or f"{self.dims[0]}_level_{i}"
-                for i, name in enumerate(index.names)
-            ]
-            index = index.set_names(valid_level_names)
+            # Avoid repeated list construction if all names already set
+            if any(name is None for name in index.names):
+                valid_level_names = [
+                    name if name is not None else f"{self.dims[0]}_level_{i}"
+                    for i, name in enumerate(index.names)
+                ]
+                index = index.set_names(valid_level_names)
+            # else: index already has valid names, skip set_names
         else:
-            index = index.set_names(self.name)
+            # Only call set_names if index.name does not match self.name
+            # This avoids needless object construction for pre-named index
+            if index.name != self.name:
+                index = index.set_names(self.name)
+            # else: index.name already correctly set
         return index
 
     def to_index(self) -> pd.Index:
