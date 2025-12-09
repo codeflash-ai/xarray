@@ -140,8 +140,17 @@ class _UFuncSignature:
         )
 
     def __str__(self):
-        lhs = ",".join("({})".format(",".join(dims)) for dims in self.input_core_dims)
-        rhs = ",".join("({})".format(",".join(dims)) for dims in self.output_core_dims)
+        # Preallocate lists for both lhs and rhs to avoid repeated string concatenations
+        lhs_list = []
+        for dims in self.input_core_dims:
+            # Avoid string concatenation in "({})".format(...), use join directly
+            # This avoids creating extra temporary strings
+            lhs_list.append(f"({','.join(dims)})")
+        lhs = ",".join(lhs_list)
+        rhs_list = []
+        for dims in self.output_core_dims:
+            rhs_list.append(f"({','.join(dims)})")
+        rhs = ",".join(rhs_list)
         return f"{lhs}->{rhs}"
 
     def to_gufunc_string(self, exclude_dims=frozenset()):
