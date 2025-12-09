@@ -375,33 +375,56 @@ _JOINERS: dict[str, Callable] = {
 
 def join_dict_keys(objects: Iterable[Mapping | Any], how: str = "inner") -> Iterable:
     joiner = _JOINERS[how]
-    all_keys = [obj.keys() for obj in objects if hasattr(obj, "keys")]
+    # Use generator for 'objects' to avoid intermediate list unless necessary
+    all_keys = []
+    for obj in objects:
+        if hasattr(obj, "keys"):
+            all_keys.append(obj.keys())
     return joiner(all_keys)
 
 
 def collect_dict_values(
     objects: Iterable[Mapping | Any], keys: Iterable, fill_value: object = None
 ) -> list[list]:
-    return [
-        [obj.get(key, fill_value) if is_dict_like(obj) else obj for obj in objects]
-        for key in keys
-    ]
+    # Convert objects to tuple to avoid multiple iteration and repeated is_dict_like checks
+    objs = tuple(objects)
+    # If every object is dict-like, optimize by using list comprehension and dict.get
+    # Otherwise retain existing logic
+    getitem = operator.getitem
+    is_all_dictlike = all(is_dict_like(obj) for obj in objs)
+    if is_all_dictlike:
+        return [[obj.get(key, fill_value) for obj in objs] for key in keys]
+    else:
+        # Reuse is_dict_like results by storing results in a list
+        obj_is_dictlike = [is_dict_like(obj) for obj in objs]
+        # Use fast local lookups and reduce attribute accesses
+        out = []
+        for key in keys:
+            out.append(
+                [
+                    obj.get(key, fill_value) if dictlike else obj
+                    for obj, dictlike in zip(objs, obj_is_dictlike)
+                ]
+            )
+        return out
 
 
 def _as_variables_or_variable(arg) -> Variable | tuple[Variable]:
-    try:
-        return arg.variables
-    except AttributeError:
-        try:
-            return arg.variable
-        except AttributeError:
-            return arg
+    # Slightly faster using getattr with default to avoid nested try/except
+    variables = getattr(arg, "variables", None)
+    if variables is not None:
+        return variables
+    variable = getattr(arg, "variable", None)
+    if variable is not None:
+        return variable
+    return arg
 
 
 def _unpack_dict_tuples(
     result_vars: Mapping[Any, tuple[Variable, ...]], num_outputs: int
 ) -> tuple[dict[Hashable, Variable], ...]:
-    out: tuple[dict[Hashable, Variable], ...] = tuple({} for _ in range(num_outputs))
+    # Pre-allocate output tuple of dicts
+    out = tuple({} for _ in range(num_outputs))
     for name, values in result_vars.items():
         for value, results_dict in zip(values, out):
             results_dict[name] = value
@@ -417,19 +440,27 @@ def _check_core_dims(signature, variable_args, name):
     the inner loop.
     """
     missing = []
-    for i, (core_dims, variable_arg) in enumerate(
-        zip(signature.input_core_dims, variable_args)
-    ):
-        # Check whether all the dims are on the variable. Note that we need the
-        # `hasattr` to check for a dims property, to protect against the case where
-        # a numpy array is passed in.
-        if hasattr(variable_arg, "dims") and set(core_dims) - set(variable_arg.dims):
-            missing += [[i, variable_arg, core_dims]]
+    input_core_dims = signature.input_core_dims
+    for i, (core_dims, variable_arg) in enumerate(zip(input_core_dims, variable_args)):
+        # hasattr() is used to protect against numpy arrays
+        var_dims = getattr(variable_arg, "dims", None)
+        if var_dims is not None:
+            missing_dims = set(core_dims) - set(var_dims)
+            if missing_dims:
+                missing.append([i, variable_arg, core_dims])
     if missing:
         message = ""
         for i, variable_arg, core_dims in missing:
-            message += f"Missing core dims {set(core_dims) - set(variable_arg.dims)} from arg number {i + 1} on a variable named `{name}`:\n{variable_arg}\n\n"
-        message += "Either add the core dimension, or if passing a dataset alternatively pass `on_missing_core_dim` as `copy` or `drop`. "
+            present_dims = getattr(variable_arg, "dims", ())
+            message += (
+                f"Missing core dims {set(core_dims) - set(present_dims)} "
+                f"from arg number {i + 1} on a variable named `{name}`:\n"
+                f"{variable_arg}\n\n"
+            )
+        message += (
+            "Either add the core dimension, or if passing a dataset alternatively pass "
+            "`on_missing_core_dim` as `copy` or `drop`. "
+        )
         return message
     return True
 
