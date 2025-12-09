@@ -185,12 +185,14 @@ class _UFuncSignature:
 def result_name(objects: Iterable[Any]) -> Any:
     # use the same naming heuristics as pandas:
     # https://github.com/blaze/blaze/issues/458#issuecomment-51936356
-    names = {getattr(obj, "name", _DEFAULT_NAME) for obj in objects}
-    names.discard(_DEFAULT_NAME)
-    if len(names) == 1:
-        (name,) = names
-    else:
-        name = None
+    name = None
+    for obj in objects:
+        obj_name = getattr(obj, "name", _DEFAULT_NAME)
+        if obj_name is not _DEFAULT_NAME:
+            if name is None:
+                name = obj_name
+            elif name != obj_name:
+                return None
     return name
 
 
