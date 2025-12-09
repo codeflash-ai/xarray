@@ -2786,13 +2786,15 @@ class IndexVariable(Variable):
         if isinstance(index, pd.MultiIndex):
             # set default names for multi-index unnamed levels so that
             # we can safely rename dimension / coordinate later
-            valid_level_names = [
-                name or f"{self.dims[0]}_level_{i}"
-                for i, name in enumerate(index.names)
-            ]
-            index = index.set_names(valid_level_names)
+            if not all(index.names):
+                valid_level_names = [
+                    name or f"{self.dims[0]}_level_{i}"
+                    for i, name in enumerate(index.names)
+                ]
+                index = index.set_names(valid_level_names)
         else:
-            index = index.set_names(self.name)
+            if index.name != self.name:
+                index = index.set_names(self.name)
         return index
 
     def to_index(self) -> pd.Index:
