@@ -70,12 +70,13 @@ def dataset_to_dataarray(obj: Dataset) -> DataArray:
     if not isinstance(obj, Dataset):
         raise TypeError(f"Expected Dataset, got {type(obj)}")
 
-    if len(obj.data_vars) > 1:
+    data_vars = obj.data_vars
+    if len(data_vars) > 1:
         raise TypeError(
             "Trying to convert Dataset with more than one data variable to DataArray"
         )
 
-    return next(iter(obj.data_vars.values()))
+    return data_vars[next(iter(data_vars))]
 
 
 def dataarray_to_dataset(obj: DataArray) -> Dataset:
