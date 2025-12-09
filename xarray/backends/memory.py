@@ -17,8 +17,8 @@ class InMemoryDataStore(AbstractWritableDataStore):
     """
 
     def __init__(self, variables=None, attributes=None):
-        self._variables = {} if variables is None else variables
-        self._attributes = {} if attributes is None else attributes
+        self._variables = variables if variables is not None else {}
+        self._attributes = attributes if attributes is not None else {}
 
     def get_attrs(self):
         return self._attributes
