@@ -1136,7 +1136,13 @@ def _raise_if_any_duplicate_dimensions(
     dims: _Dims, err_context: str = "This function"
 ) -> None:
     if len(set(dims)) < len(dims):
-        repeated_dims = {d for d in dims if dims.count(d) > 1}
+        seen = set()
+        repeated_dims = set()
+        for d in dims:
+            if d in seen:
+                repeated_dims.add(d)
+            else:
+                seen.add(d)
         raise ValueError(
             f"{err_context} cannot handle duplicate dimensions, but dimensions {repeated_dims} appear more than once on this object's dims: {dims}"
         )
