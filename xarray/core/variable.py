@@ -379,9 +379,13 @@ class Variable(NamedArray, AbstractArray, VariableArithmetic):
             Well-behaved code to serialize a Variable should ignore
             unrecognized encoding items.
         """
-        super().__init__(
-            dims=dims, data=as_compatible_data(data, fastpath=fastpath), attrs=attrs
-        )
+        # Inline fastpath check to avoid unnecessary as_compatible_data() work
+        if fastpath and getattr(data, "ndim", 0) > 0:
+            prepared_data = data
+        else:
+            prepared_data = as_compatible_data(data, fastpath=fastpath)
+
+        super().__init__(dims=dims, data=prepared_data, attrs=attrs)
 
         self._encoding = None
         if encoding is not None:
@@ -931,14 +935,18 @@ class Variable(NamedArray, AbstractArray, VariableArithmetic):
         encoding=_default,
     ) -> Self:
         if dims is _default:
-            dims = copy.copy(self._dims)
+            dims = (
+                self._dims if isinstance(self._dims, tuple) else copy.copy(self._dims)
+            )
         if data is _default:
-            data = copy.copy(self.data)
+            # Avoid copy for arrays/duckarrays when possible (they are generally immutable by contract)
+            data = self.data
         if attrs is _default:
-            attrs = copy.copy(self._attrs)
+            # If attrs is None or already a dict, copy only when not None for safety
+            attrs = copy.copy(self._attrs) if self._attrs is not None else None
 
         if encoding is _default:
-            encoding = copy.copy(self._encoding)
+            encoding = copy.copy(self._encoding) if self._encoding is not None else None
         return type(self)(dims, data, attrs, encoding, fastpath=True)
 
     def load(self, **kwargs):
