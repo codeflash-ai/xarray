@@ -155,21 +155,22 @@ def _get_scheduler(get=None, collection=None) -> str | None:
     except ImportError:
         return None
 
-    try:
-        from dask.distributed import Client
+    # Check distributed scheduler first, avoids module import on fallback
+    actual_get_self = getattr(actual_get, "__self__", None)
+    if actual_get_self is not None:
+        try:
+            from dask.distributed import Client
 
-        if isinstance(actual_get.__self__, Client):
-            return "distributed"
-    except (ImportError, AttributeError):
-        pass
+            if isinstance(actual_get_self, Client):
+                return "distributed"
+        except ImportError:
+            # distributed not installed, can't be the distributed scheduler
+            pass
 
-    try:
-        # As of dask=2.6, dask.multiprocessing requires cloudpickle to be installed
-        # Dependency removed in https://github.com/dask/dask/pull/5511
-        if actual_get is dask.multiprocessing.get:
-            return "multiprocessing"
-    except AttributeError:
-        pass
+    # Check for multiprocessing scheduler
+    multiprocessing_get = getattr(getattr(dask, "multiprocessing", None), "get", None)
+    if multiprocessing_get is not None and actual_get is multiprocessing_get:
+        return "multiprocessing"
 
     return "threaded"
 
