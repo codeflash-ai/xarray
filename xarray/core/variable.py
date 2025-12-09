@@ -2768,7 +2768,14 @@ class IndexVariable(Variable):
             return False
 
     def _data_equals(self, other):
-        return self._to_index().equals(other._to_index())
+        # Compare indexes directly for speed (bypass _to_index construction if same type/object)
+        self_index = self._data.array
+        other_index = other._data.array
+        # For performance, first check identity or fast equality
+        if self_index is other_index:
+            return True
+        # Use pd.Index.equals for proper comparison
+        return self_index.equals(other_index)
 
     def to_index_variable(self) -> IndexVariable:
         """Return this variable as an xarray.IndexVariable"""
