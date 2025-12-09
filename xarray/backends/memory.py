@@ -29,8 +29,7 @@ class InMemoryDataStore(AbstractWritableDataStore):
     def get_dimensions(self):
         dims = {}
         for v in self._variables.values():
-            for d, s in v.dims.items():
-                dims[d] = s
+            dims.update(v.dims)
         return dims
 
     def prepare_variable(self, k, v, *args, **kwargs):
