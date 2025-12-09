@@ -89,7 +89,13 @@ def mod_version(mod: ModType) -> Version:
 
 
 def is_chunked_array(x: duckarray[Any, Any]) -> bool:
-    return is_duck_dask_array(x) or (is_duck_array(x) and hasattr(x, "chunks"))
+    # Check for Dask array first, as it is most specific/expensive
+    if is_duck_dask_array(x):
+        return True
+    # Short-circuit: if object doesn't have 'chunks', skip duck array check
+    if not hasattr(x, "chunks"):
+        return False
+    return is_duck_array(x)
 
 
 def is_0d_dask_array(x: duckarray[Any, Any]) -> bool:
