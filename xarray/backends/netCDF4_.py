@@ -277,10 +277,15 @@ def _extract_nc4_variable_encoding(
         # if the original file had an unlimited dimension. This is problematic
         # if the new file no longer has an unlimited dimension.
         chunksizes = encoding["chunksizes"]
-        chunks_too_big = any(
-            c > d and dim not in unlimited_dims
-            for c, d, dim in zip(chunksizes, variable.shape, variable.dims)
-        )
+        # Optimize chunk shape check: avoid generator and reuse
+        var_dims_set = None
+        if unlimited_dims:
+            var_dims_set = set(unlimited_dims)
+        chunks_too_big = False
+        for c, d, dim in zip(chunksizes, variable.shape, variable.dims):
+            if c > d and (var_dims_set is None or dim not in var_dims_set):
+                chunks_too_big = True
+                break
         has_original_shape = "original_shape" in encoding
         changed_shape = (
             has_original_shape and encoding.get("original_shape") != variable.shape
@@ -288,13 +293,18 @@ def _extract_nc4_variable_encoding(
         if chunks_too_big or changed_shape:
             del encoding["chunksizes"]
 
-    var_has_unlim_dim = any(dim in unlimited_dims for dim in variable.dims)
-    if not raise_on_invalid and var_has_unlim_dim and "contiguous" in encoding.keys():
+    # Optimize: avoid generator+any for small tuple unlimited_dims
+    if unlimited_dims:
+        unlimited_dims_set = set(unlimited_dims)
+        var_has_unlim_dim = any(dim in unlimited_dims_set for dim in variable.dims)
+    else:
+        var_has_unlim_dim = False
+
+    if not raise_on_invalid and var_has_unlim_dim and "contiguous" in encoding:
         del encoding["contiguous"]
 
     for k in safe_to_drop:
-        if k in encoding:
-            del encoding[k]
+        encoding.pop(k, None)
 
     if raise_on_invalid:
         invalid = [k for k in encoding if k not in valid_encodings]
@@ -304,9 +314,10 @@ def _extract_nc4_variable_encoding(
                 f"encodings are: {valid_encodings!r}"
             )
     else:
-        for k in list(encoding):
-            if k not in valid_encodings:
-                del encoding[k]
+        # Optimize dict pop by set difference and not iterating all keys
+        remove_keys = [k for k in encoding if k not in valid_encodings]
+        for k in remove_keys:
+            del encoding[k]
 
     return encoding
 
