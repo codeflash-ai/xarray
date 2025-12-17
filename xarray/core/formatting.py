@@ -1,5 +1,4 @@
-"""String formatting routines for __repr__.
-"""
+"""String formatting routines for __repr__."""
 
 from __future__ import annotations
 
@@ -9,7 +8,7 @@ import math
 from collections import defaultdict
 from collections.abc import Collection, Hashable, Sequence
 from datetime import datetime, timedelta
-from itertools import chain, zip_longest
+from itertools import chain
 from reprlib import recursive_repr
 from typing import TYPE_CHECKING
 
@@ -220,18 +219,42 @@ def format_array_flat(array, max_width: int):
         first_n_items(array, (max_possibly_relevant + 1) // 2)
     )
     relevant_back_items = format_items(last_n_items(array, max_possibly_relevant // 2))
-    # interleave relevant front and back items:
-    #     [a, b, c] and [y, z] -> [a, z, b, y, c]
-    relevant_items = sum(
-        zip_longest(relevant_front_items, reversed(relevant_back_items)), ()
-    )[:max_possibly_relevant]
 
-    cum_len = np.cumsum([len(s) + 1 for s in relevant_items]) - 1
+    # Interleave front and back items, but avoid unnecessary itertools/generator expansion
+    # for what is almost always a short list.
+    zipped = []
+    front_len = len(relevant_front_items)
+    back_len = len(relevant_back_items)
+    for i in range(max(front_len, back_len)):
+        if i < front_len:
+            zipped.append(relevant_front_items[i])
+        if i < back_len:
+            zipped.append(relevant_back_items[back_len - 1 - i])
+    relevant_items = zipped[:max_possibly_relevant]
+
+    # Use a Python list for cumulative length since relevant_items is small, avoid numpy
+    cum_lens = []
+    total = 0
+    for s in relevant_items:
+        total += len(s) + 1
+        cum_lens.append(total - 1)
+    # Numpy only needed for large arrays, for formatting it's rarely the case
     if (array.size > 2) and (
-        (max_possibly_relevant < array.size) or (cum_len > max_width).any()
+        (max_possibly_relevant < array.size) or any(x > max_width for x in cum_lens)
     ):
         padding = " ... "
-        max_len = max(int(np.argmax(cum_len + len(padding) - 1 > max_width)), 2)
+        # Find the smallest i such that cum_lens[i] + len(padding) - 1 > max_width
+        max_len = max(
+            next(
+                (
+                    i
+                    for i, val in enumerate(cum_lens)
+                    if val + len(padding) - 1 > max_width
+                ),
+                len(cum_lens),
+            ),
+            2,
+        )
         count = min(array.size, max_len)
     else:
         count = array.size
@@ -239,8 +262,7 @@ def format_array_flat(array, max_width: int):
 
     num_front = (count + 1) // 2
     num_back = count - num_front
-    # note that num_back is 0 <--> array.size is 0 or 1
-    #                         <--> relevant_back_items is []
+    # Compose string using only the relevant portions
     pprint_str = "".join(
         [
             " ".join(relevant_front_items[:num_front]),
@@ -248,6 +270,10 @@ def format_array_flat(array, max_width: int):
             " ".join(relevant_back_items[-num_back:]),
         ]
     )
+
+    # As a final check, if it's still too long even with the limit in values,
+    # replace the end with an ellipsis
+    # NB: this will still returns a full 3-character ellipsis when max_width < 3
 
     # As a final check, if it's still too long even with the limit in values,
     # replace the end with an ellipsis
