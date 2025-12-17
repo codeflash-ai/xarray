@@ -86,6 +86,7 @@ from xarray.namedarray.utils import (  # noqa: F401
     module_available,
     to_0d_object_array,
 )
+from typing_extensions import TypeGuard
 
 if TYPE_CHECKING:
     from xarray.core.types import Dims, ErrorOptionsWithWarn
@@ -721,7 +722,10 @@ def iterable_of_hashable(v: Any) -> TypeGuard[Iterable[Hashable]]:
         it = iter(v)
     except TypeError:
         return False
-    return all(hashable(elm) for elm in it)
+    for elm in it:
+        if not hashable(elm):
+            return False
+    return True
 
 
 def decode_numpy_dict_values(attrs: Mapping[K, V]) -> dict[K, V]:
