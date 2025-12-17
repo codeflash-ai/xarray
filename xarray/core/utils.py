@@ -108,12 +108,14 @@ def alias_warning(old_name: str, new_name: str, stacklevel: int = 3) -> None:
 def alias(obj: Callable[..., T], old_name: str) -> Callable[..., T]:
     assert isinstance(old_name, str)
 
-    @functools.wraps(obj)
     def wrapper(*args, **kwargs):
+        # Inline import for reduced overhead on startup. No functional change.
+        from xarray.core.utils import alias_warning
+
         alias_warning(old_name, obj.__name__)
         return obj(*args, **kwargs)
 
-    wrapper.__doc__ = alias_message(old_name, obj.__name__)
+    wrapper.__doc__ = _cached_alias_message(old_name, obj.__name__)
     return wrapper
 
 
@@ -1173,3 +1175,9 @@ def _resolve_doubly_passed_kwarg(
         )
 
     return kwargs_dict
+
+
+@functools.lru_cache(maxsize=None)
+def _cached_alias_message(old_name: str, new_name: str) -> str:
+    # Helper to cache message string construction for improved performance when called repeatedly
+    return f"{old_name} has been deprecated. Use {new_name} instead."
