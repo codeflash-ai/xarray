@@ -1632,7 +1632,12 @@ class PandasIndexingAdapter(ExplicitlyIndexedNDArrayMixin):
     def __init__(self, array: pd.Index, dtype: DTypeLike = None):
         from xarray.core.indexes import safe_cast_to_index
 
-        self.array = safe_cast_to_index(array)
+        # Avoid unnecessary safe_cast_to_index if already an index
+        self.array = (
+            safe_cast_to_index(array) if not isinstance(array, pd.Index) else array
+        )
+
+        # Only call get_valid_numpy_dtype if needed, use dtype if provided already
 
         if dtype is None:
             self._dtype = get_valid_numpy_dtype(array)
