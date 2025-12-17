@@ -7,6 +7,12 @@ import numpy as np
 
 from xarray.core import utils
 
+PROMOTE_TO_OBJECT: tuple[tuple[type[np.generic], type[np.generic]], ...] = (
+    (np.number, np.character),  # numpy promotes to character
+    (np.bool_, np.character),  # numpy promotes to character
+    (np.bytes_, np.str_),  # numpy promotes to unicode
+)
+
 # Use as a sentinel value to indicate a dtype appropriate NA value.
 NA = utils.ReprObject("<NA>")
 
@@ -187,9 +193,17 @@ def result_type(
     types = {np.result_type(t).type for t in arrays_and_dtypes}
 
     for left, right in PROMOTE_TO_OBJECT:
-        if any(issubclass(t, left) for t in types) and any(
-            issubclass(t, right) for t in types
-        ):
-            return np.dtype(object)
+        left_found = False
+        right_found = False
+        for t in types:
+            if not left_found and issubclass(t, left):
+                left_found = True
+                if right_found:
+                    return np.dtype(object)
+            if not right_found and issubclass(t, right):
+                right_found = True
+                if left_found:
+                    return np.dtype(object)
+        # If both found, already returned above
 
     return np.result_type(*arrays_and_dtypes)
