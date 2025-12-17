@@ -85,22 +85,16 @@ ENGINES = {
 
 
 def _get_default_engine_remote_uri() -> Literal["netcdf4", "pydap"]:
-    engine: Literal["netcdf4", "pydap"]
     try:
-        import netCDF4  # noqa: F401
-
-        engine = "netcdf4"
+        return "netcdf4"
     except ImportError:  # pragma: no cover
         try:
-            import pydap  # noqa: F401
-
-            engine = "pydap"
+            return "pydap"
         except ImportError:
             raise ValueError(
                 "netCDF4 or pydap is required for accessing "
                 "remote datasets via OPeNDAP"
             )
-    return engine
 
 
 def _get_default_engine_gz() -> Literal["scipy"]:
@@ -116,7 +110,6 @@ def _get_default_engine_gz() -> Literal["scipy"]:
 def _get_default_engine_netcdf() -> Literal["netcdf4", "scipy"]:
     engine: Literal["netcdf4", "scipy"]
     try:
-        import netCDF4  # noqa: F401
 
         engine = "netcdf4"
     except ImportError:  # pragma: no cover
