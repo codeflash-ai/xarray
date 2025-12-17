@@ -7,6 +7,7 @@ import weakref
 from collections.abc import Hashable, MutableMapping
 from typing import Any, ClassVar
 from weakref import WeakValueDictionary
+import functools
 
 
 # SerializableLock is adapted from Dask:
@@ -158,6 +159,8 @@ def _get_scheduler(get=None, collection=None) -> str | None:
     try:
         from dask.distributed import Client
 
+        _FILE_LOCKS: MutableMapping[Any, threading.Lock] = weakref.WeakValueDictionary()
+
         if isinstance(actual_get.__self__, Client):
             return "distributed"
     except (ImportError, AttributeError):
@@ -186,8 +189,8 @@ def get_write_lock(key):
     -------
     Lock object that can be used like a threading.Lock object.
     """
-    scheduler = _get_scheduler()
-    lock_maker = _get_lock_maker(scheduler)
+    scheduler = _cached_scheduler()
+    lock_maker = _cached_lock_maker(scheduler)
     return lock_maker(key)
 
 
@@ -262,12 +265,15 @@ class DummyLock:
 
 def combine_locks(locks):
     """Combine a sequence of locks into a single lock."""
-    all_locks = []
-    for lock in locks:
-        if isinstance(lock, CombinedLock):
-            all_locks.extend(lock.locks)
-        elif lock is not None:
-            all_locks.append(lock)
+
+    def _flatten(locks):
+        for lock in locks:
+            if isinstance(lock, CombinedLock):
+                yield from lock.locks
+            elif lock is not None:
+                yield lock
+
+    all_locks = list(_flatten(locks))
 
     num_locks = len(all_locks)
     if num_locks > 1:
@@ -283,3 +289,15 @@ def ensure_lock(lock):
     if lock is None or lock is False:
         return DummyLock()
     return lock
+
+
+@functools.lru_cache(maxsize=1)
+def _cached_scheduler():
+    """Cached wrapper for _get_scheduler with no args for use in get_write_lock."""
+    return _get_scheduler()
+
+
+@functools.lru_cache(maxsize=4)
+def _cached_lock_maker(scheduler):
+    """Cached wrapper for _get_lock_maker for each scheduler type."""
+    return _get_lock_maker(scheduler)
