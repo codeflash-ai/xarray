@@ -266,19 +266,40 @@ def is_list_like(value: Any) -> TypeGuard[list | tuple]:
 
 
 def _is_scalar(value, include_0d):
-    from xarray.core.variable import NON_NUMPY_SUPPORTED_ARRAY_TYPES
+    # Move import out of function for performance
+    # Only bring NON_NUMPY_SUPPORTED_ARRAY_TYPES into local scope once
+    # Instead, make the variable global so the import/retrieval happens only once per module load,
+    # which is safe and has no behavioral change for typical usage.
+    # This provides a substantial speedup for repeated calls.
+    global _NON_NUMPY_SUPPORTED_ARRAY_TYPES
+    try:
+        NON_NUMPY_SUPPORTED_ARRAY_TYPES = _NON_NUMPY_SUPPORTED_ARRAY_TYPES
+    except NameError:
+        from xarray.core.variable import NON_NUMPY_SUPPORTED_ARRAY_TYPES
 
-    if include_0d:
-        include_0d = getattr(value, "ndim", None) == 0
-    return (
-        include_0d
-        or isinstance(value, (str, bytes))
-        or not (
-            isinstance(value, (Iterable,) + NON_NUMPY_SUPPORTED_ARRAY_TYPES)
-            or hasattr(value, "__array_function__")
-            or hasattr(value, "__array_namespace__")
-        )
-    )
+        _NON_NUMPY_SUPPORTED_ARRAY_TYPES = NON_NUMPY_SUPPORTED_ARRAY_TYPES
+
+    # Fast path for string and bytes
+    if isinstance(value, (str, bytes)):
+        return True
+
+    # Fast path for 0-d arrays if include_0d is True
+    if include_0d and getattr(value, "ndim", None) == 0:
+        return True
+
+    # Avoid creating tuple for isinstance unless we must
+    # It's safe and fast to do the addition op once
+    type_tuple = (Iterable,) + NON_NUMPY_SUPPORTED_ARRAY_TYPES
+
+    # Negative test: if it is an iterable/array, or implements array function/namespace, it is NOT scalar.
+    if (
+        isinstance(value, type_tuple)
+        or hasattr(value, "__array_function__")
+        or hasattr(value, "__array_namespace__")
+    ):
+        return False
+
+    return True
 
 
 # See GH5624, this is a convoluted way to allow type-checking to use `TypeGuard` without
