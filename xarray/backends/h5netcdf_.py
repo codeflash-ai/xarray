@@ -45,8 +45,12 @@ if TYPE_CHECKING:
 
 class H5NetCDFArrayWrapper(BaseNetCDF4Array):
     def get_array(self, needs_lock=True):
+        if hasattr(self, "_array_cache"):
+            return self._array_cache
+
         ds = self.datastore._acquire(needs_lock)
-        return ds.variables[self.variable_name]
+        self._array_cache = ds.variables[self.variable_name]
+        return self._array_cache
 
     def __getitem__(self, key):
         return indexing.explicit_indexing_adapter(
