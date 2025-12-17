@@ -349,10 +349,12 @@ def dict_equiv(
     equals : bool
         True if the dictionaries are equal
     """
+    if len(first) != len(second):
+        return False
     for k in first:
         if k not in second or not compat(first[k], second[k]):
             return False
-    return all(k in first for k in second)
+    return True
 
 
 def compat_dict_intersection(
