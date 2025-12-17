@@ -1864,10 +1864,10 @@ class PandasMultiIndexingAdapter(PandasIndexingAdapter):
             pos = threshold // 2
             indices = np.concatenate([np.arange(0, pos), np.arange(-pos, 0)])
             subset = self[OuterIndexer((indices,))]
+            return np.asarray(subset)
         else:
-            subset = self
-
-        return np.asarray(subset)
+            # Fast path: if no subsetting, avoid concatenation or Indexer logic
+            return np.asarray(self)
 
     def _repr_inline_(self, max_width: int) -> str:
         from xarray.core.formatting import format_array_flat
