@@ -87,7 +87,6 @@ ENGINES = {
 def _get_default_engine_remote_uri() -> Literal["netcdf4", "pydap"]:
     engine: Literal["netcdf4", "pydap"]
     try:
-        import netCDF4  # noqa: F401
 
         engine = "netcdf4"
     except ImportError:  # pragma: no cover
@@ -105,7 +104,6 @@ def _get_default_engine_remote_uri() -> Literal["netcdf4", "pydap"]:
 
 def _get_default_engine_gz() -> Literal["scipy"]:
     try:
-        import scipy  # noqa: F401
 
         engine: Final = "scipy"
     except ImportError:  # pragma: no cover
@@ -114,22 +112,16 @@ def _get_default_engine_gz() -> Literal["scipy"]:
 
 
 def _get_default_engine_netcdf() -> Literal["netcdf4", "scipy"]:
-    engine: Literal["netcdf4", "scipy"]
     try:
-        import netCDF4  # noqa: F401
-
-        engine = "netcdf4"
+        return "netcdf4"
     except ImportError:  # pragma: no cover
         try:
-            import scipy.io.netcdf  # noqa: F401
-
-            engine = "scipy"
+            return "scipy"
         except ImportError:
             raise ValueError(
                 "cannot read or write netCDF files without "
                 "netCDF4-python or scipy installed"
             )
-    return engine
 
 
 def _get_default_engine(path: str, allow_remote: bool = False) -> T_NetcdfEngine:
