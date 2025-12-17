@@ -90,6 +90,8 @@ from xarray.namedarray.utils import (  # noqa: F401
 if TYPE_CHECKING:
     from xarray.core.types import Dims, ErrorOptionsWithWarn
 
+_PATTERN_REMOTE_URI = re.compile(r"^[a-z][a-z0-9]*(\://|\:\:)")
+
 K = TypeVar("K")
 V = TypeVar("V")
 T = TypeVar("T")
@@ -644,7 +646,7 @@ def is_remote_uri(path: str) -> bool:
     This also matches for http[s]://, which were the only remote URLs
     supported in <=v0.16.2.
     """
-    return bool(re.search(r"^[a-z][a-z0-9]*(\://|\:\:)", path))
+    return _PATTERN_REMOTE_URI.match(path) is not None
 
 
 def read_magic_number_from_file(filename_or_obj, count=8) -> bytes:
