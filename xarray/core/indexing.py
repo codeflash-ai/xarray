@@ -129,22 +129,36 @@ def group_indexers_by_index(
     options: Mapping[str, Any],
 ) -> list[tuple[Index, dict[Any, Any]]]:
     """Returns a list of unique indexes and their corresponding indexers."""
+
+    # Inline for speed: resolve lookups to locals where beneficial
+    obj_xindexes = obj.xindexes
+    obj_coords = obj.coords
+    obj_dims = obj.dims
+
+    # Membership checks: dims may be MappingProxyType, convert to set if not already (cost amortized)
+    if not isinstance(obj_dims, set):
+        obj_dims_set = set(obj_dims)
+    else:
+        obj_dims_set = obj_dims
+
     unique_indexes = {}
     grouped_indexers: Mapping[int | None, dict] = defaultdict(dict)
 
+    get_index = obj_xindexes.get
+
     for key, label in indexers.items():
-        index: Index = obj.xindexes.get(key, None)
+        index: Index = get_index(key, None)
 
         if index is not None:
             index_id = id(index)
             unique_indexes[index_id] = index
             grouped_indexers[index_id][key] = label
-        elif key in obj.coords:
+        elif key in obj_coords:
             raise KeyError(f"no index found for coordinate {key!r}")
-        elif key not in obj.dims:
+        elif key not in obj_dims_set:
             raise KeyError(
                 f"{key!r} is not a valid dimension or coordinate for "
-                f"{obj.__class__.__name__} with dimensions {obj.dims!r}"
+                f"{obj.__class__.__name__} with dimensions {obj_dims!r}"
             )
         elif len(options):
             raise ValueError(
@@ -158,6 +172,7 @@ def group_indexers_by_index(
             unique_indexes[None] = None
             grouped_indexers[None][key] = label
 
+    # Materialize the final result, as original, in the same order
     return [(unique_indexes[k], grouped_indexers[k]) for k in unique_indexes]
 
 
