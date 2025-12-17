@@ -781,8 +781,11 @@ class HiddenKeyDict(MutableMapping[K, V]):
                 yield k
 
     def __len__(self) -> int:
-        num_hidden = len(self._hidden_keys & self._data.keys())
-        return len(self._data) - num_hidden
+        count = 0
+        for key in self._hidden_keys:
+            if key in self._data:
+                count += 1
+        return len(self._data) - count
 
 
 def get_temp_dimname(dims: Container[Hashable], new_dim: Hashable) -> Hashable:
